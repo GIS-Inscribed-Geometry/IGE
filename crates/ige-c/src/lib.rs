@@ -1,0 +1,177 @@
+//! C bindings for Inscribed Geometry Engine (IGE)
+//!
+//! Provides a C-compatible API for calling IGE from C, C++, or any language
+//! with C FFI support.
+
+use libc::{c_double, c_int, size_t};
+use ige_core::{solve_oriented_lir, SolverOptions};
+use geo_types::{Coord, LineString, Polygon};
+use std::slice;
+
+/// C-compatible rectangle result
+#[repr(C)]
+pub struct IgeRectangle {
+    pub x_min: c_double,
+    pub y_min: c_double,
+    pub x_max: c_double,
+    pub y_max: c_double,
+}
+
+/// C-compatible solver options
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IgeOptions {
+    pub rotation_degrees: c_double,
+    pub prefer_gpu: c_int,
+    pub force_cpu: c_int,
+    pub max_aspect_ratio: c_double,
+}
+
+impl Default for IgeOptions {
+    fn default() -> Self {
+        Self {
+            rotation_degrees: 0.0,
+            prefer_gpu: 1,
+            force_cpu: 0,
+            max_aspect_ratio: 0.0,
+        }
+    }
+}
+
+impl From<IgeOptions> for SolverOptions {
+    fn from(opts: IgeOptions) -> Self {
+        SolverOptions {
+            rotation_degrees: opts.rotation_degrees,
+            prefer_gpu: opts.prefer_gpu != 0,
+            force_cpu: opts.force_cpu != 0,
+            max_aspect_ratio: opts.max_aspect_ratio,
+            gpu_threshold: 1000,
+        }
+    }
+}
+
+/// Solve for largest oriented inscribed rectangle (C API)
+///
+/// # Safety
+///
+/// - `coords` must point to a valid array of `coords_len` doubles
+/// - Coordinates are interpreted as [x0, y0, x1, y1, x2, y2, ...]
+/// - `result` must point to a valid IgeRectangle
+/// - Returns 0 on success, -1 on error
+///
+/// # Example
+///
+/// ```c
+/// IgeRectangle rect;
+/// IgeOptions opts = ige_options_default();
+/// double coords[] = {0, 0, 10, 0, 10, 10, 0, 10, 0, 0};
+/// int status = ige_solve(coords, 10, NULL, &opts, &rect);
+/// if (status == 0) {
+///     printf("Area: %f\n", (rect.x_max - rect.x_min) * (rect.y_max - rect.y_min));
+/// }
+/// ```
+#[no_mangle]
+pub unsafe extern "C" fn ige_solve(
+    coords: *const c_double,
+    coords_len: size_t,
+    options: *const IgeOptions,
+    result: *mut IgeRectangle,
+) -> c_int {
+    if coords.is_null() || result.is_null() {
+        return -1;
+    }
+
+    if coords_len < 6 || !coords_len.is_multiple_of(2) {
+        return -1; // Need at least 3 coordinate pairs
+    }
+
+    // Convert coordinates
+    let coord_slice = slice::from_raw_parts(coords, coords_len);
+    let mut geo_coords = Vec::with_capacity(coords_len / 2);
+
+    for i in (0..coords_len).step_by(2) {
+        geo_coords.push(Coord {
+            x: coord_slice[i],
+            y: coord_slice[i + 1],
+        });
+    }
+
+    let exterior = LineString::from(geo_coords);
+    let polygon = Polygon::new(exterior, vec![]);
+
+    // Get options
+    let opts = if options.is_null() {
+        IgeOptions::default()
+    } else {
+        unsafe { *options }
+    };
+    let _solver_opts: SolverOptions = opts.into();
+
+    // Solve
+    let rect = solve_oriented_lir(&polygon);
+    match rect {
+        Some(rect) => {
+            *result = IgeRectangle {
+                x_min: rect.x_min,
+                y_min: rect.y_min,
+                x_max: rect.x_max,
+                y_max: rect.y_max,
+            };
+            0
+        }
+        None => -1,
+    }
+}
+
+/// Get default solver options
+///
+/// # Safety
+///
+/// This function is safe to call with no pointer arguments.
+#[no_mangle]
+pub unsafe extern "C" fn ige_options_default() -> IgeOptions {
+    IgeOptions::default()
+}
+
+/// Calculate rectangle area
+#[no_mangle]
+pub unsafe extern "C" fn ige_rectangle_area(rect: *const IgeRectangle) -> c_double {
+    if rect.is_null() {
+        return 0.0;
+    }
+
+    let r = &*rect;
+    (r.x_max - r.x_min) * (r.y_max - r.y_min)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_c_api_square() {
+        let coords = [0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0, 0.0, 0.0];
+        let mut rect = IgeRectangle {
+            x_min: 0.0,
+            y_min: 0.0,
+            x_max: 0.0,
+            y_max: 0.0,
+        };
+
+        let opts = unsafe { ige_options_default() };
+
+        let status = unsafe {
+            ige_solve(
+                coords.as_ptr(),
+                coords.len(),
+                &opts as *const _,
+                &mut rect as *mut _,
+            )
+        };
+
+        assert_eq!(status, 0);
+
+        let area = unsafe { ige_rectangle_area(&rect as *const _) };
+        assert!((area - 100.0).abs() < 0.1);
+    }
+}

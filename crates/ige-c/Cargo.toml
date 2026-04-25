@@ -1,0 +1,21 @@
+[package]
+name = "ige-c"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "C bindings for Inscribed Geometry Engine (IGE)"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+name = "ige_c"
+
+[dependencies]
+ige-core = { path = "../ige-core" }
+libc.workspace = true
+geo-types.workspace = true
+
+[features]
+default = []
+gpu = ["ige-core/gpu"]

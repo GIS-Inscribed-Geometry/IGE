@@ -1,0 +1,22 @@
+[package]
+name = "ige-py"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Python bindings for Inscribed Geometry Engine (IGE)"
+
+[lib]
+name = "ige"
+crate-type = ["cdylib"]
+
+[dependencies]
+ige-core = { path = "../ige-core" }
+pyo3.workspace = true
+geo-types.workspace = true
+geo.workspace = true
+
+[features]
+default = []
+gpu = ["ige-core/gpu"]
