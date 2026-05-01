@@ -4,7 +4,7 @@
 //! with C FFI support.
 
 use libc::{c_double, c_int, size_t};
-use ige_core::{solve_oriented_lir, SolverOptions};
+use ige_core::{solve_axis_aligned, solve_oriented_lir, AxisAlignedOptions, SolverOptions};
 use geo_types::{Coord, LineString, Polygon};
 use std::slice;
 
@@ -48,6 +48,87 @@ impl From<IgeOptions> for SolverOptions {
             gpu_threshold: 1000,
         }
     }
+}
+
+// ─── Axis-aligned solver ──────────────────────────────────────────────────
+
+/// C-compatible axis-aligned solver options
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IgeAxisAlignedOptions {
+    pub max_aspect_ratio: c_double,
+}
+
+impl Default for IgeAxisAlignedOptions {
+    fn default() -> Self {
+        Self { max_aspect_ratio: 0.0 }
+    }
+}
+
+impl From<IgeAxisAlignedOptions> for AxisAlignedOptions {
+    fn from(opts: IgeAxisAlignedOptions) -> Self {
+        AxisAlignedOptions { max_ratio: opts.max_aspect_ratio }
+    }
+}
+
+/// Solve for the largest axis-aligned rectangle (C API)
+///
+/// # Safety
+///
+/// - `coords` must point to a valid array of `coords_len` doubles
+/// - Coordinates are interpreted as [x0, y0, x1, y1, x2, y2, ...]
+/// - `result` must point to a valid IgeRectangle
+/// - Returns 0 on success, -1 on error
+#[no_mangle]
+pub unsafe extern "C" fn ige_solve_axis_aligned(
+    coords: *const c_double,
+    coords_len: size_t,
+    options: *const IgeAxisAlignedOptions,
+    result: *mut IgeRectangle,
+) -> c_int {
+    if coords.is_null() || result.is_null() {
+        return -1;
+    }
+    if coords_len < 6 || !coords_len.is_multiple_of(2) {
+        return -1;
+    }
+
+    let coord_slice = slice::from_raw_parts(coords, coords_len);
+    let mut geo_coords = Vec::with_capacity(coords_len / 2);
+    for i in (0..coords_len).step_by(2) {
+        geo_coords.push(Coord {
+            x: coord_slice[i],
+            y: coord_slice[i + 1],
+        });
+    }
+
+    let exterior = LineString::from(geo_coords);
+    let polygon = Polygon::new(exterior, vec![]);
+
+    let opts: AxisAlignedOptions = if options.is_null() {
+        IgeAxisAlignedOptions::default()
+    } else {
+        unsafe { *options }
+    }.into();
+
+    match solve_axis_aligned(&polygon, &opts) {
+        Some(rect) => {
+            *result = IgeRectangle {
+                x_min: rect.x_min,
+                y_min: rect.y_min,
+                x_max: rect.x_max,
+                y_max: rect.y_max,
+            };
+            0
+        }
+        None => -1,
+    }
+}
+
+/// Get default axis-aligned solver options
+#[no_mangle]
+pub unsafe extern "C" fn ige_axis_aligned_options_default() -> IgeAxisAlignedOptions {
+    IgeAxisAlignedOptions::default()
 }
 
 /// Solve for largest oriented inscribed rectangle (C API)
@@ -173,5 +254,55 @@ mod tests {
 
         let area = unsafe { ige_rectangle_area(&rect as *const _) };
         assert!((area - 100.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_c_api_axis_aligned_square() {
+        let coords = [0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0, 0.0, 0.0];
+        let mut rect = IgeRectangle {
+            x_min: 0.0,
+            y_min: 0.0,
+            x_max: 0.0,
+            y_max: 0.0,
+        };
+
+        let opts = unsafe { ige_axis_aligned_options_default() };
+
+        let status = unsafe {
+            ige_solve_axis_aligned(
+                coords.as_ptr(),
+                coords.len(),
+                &opts as *const _,
+                &mut rect as *mut _,
+            )
+        };
+
+        assert_eq!(status, 0);
+
+        let area = unsafe { ige_rectangle_area(&rect as *const _) };
+        assert!((area - 100.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_c_api_axis_aligned_triangle() {
+        let coords = [0.0, 0.0, 10.0, 0.0, 0.0, 10.0];
+        let mut rect = IgeRectangle {
+            x_min: 0.0,
+            y_min: 0.0,
+            x_max: 0.0,
+            y_max: 0.0,
+        };
+
+        let status = unsafe {
+            ige_solve_axis_aligned(
+                coords.as_ptr(),
+                coords.len(),
+                std::ptr::null(),
+                &mut rect as *mut _,
+            )
+        };
+
+        assert_eq!(status, 0);
+        assert!((rect.x_max - rect.x_min) * (rect.y_max - rect.y_min) > 0.0);
     }
 }

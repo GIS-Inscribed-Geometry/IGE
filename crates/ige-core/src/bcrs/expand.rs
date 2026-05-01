@@ -7,7 +7,7 @@
 use geo::{BoundingRect, Contains};
 use geo_types::{Coord, LineString, Point, Polygon};
 
-use crate::bcrs::sdf::polygon_sdf;
+use crate::axis_aligned::sdf::polygon_sdf;
 
 const BINARY_STEPS: usize = 24;
 const EXPAND_ITERS: usize = 3;

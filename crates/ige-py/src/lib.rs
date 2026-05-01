@@ -1,7 +1,9 @@
-use ige_core::{solve_oriented_lir, SolverOptions};
+use ige_core::{solve_axis_aligned, solve_oriented_lir, AxisAlignedOptions, SolverOptions};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use geo_types::{Polygon, LineString, Coord};
+
+// ─── Oriented solver ──────────────────────────────────────────────────────
 
 #[pyclass]
 #[derive(Clone)]
@@ -63,10 +65,79 @@ fn oriented_lir_demo() -> PyResult<String> {
     ))
 }
 
+// ─── Axis-aligned solver ──────────────────────────────────────────────────
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyAxisAlignedResult {
+    #[pyo3(get)]
+    pub x_min: f64,
+    #[pyo3(get)]
+    pub y_min: f64,
+    #[pyo3(get)]
+    pub x_max: f64,
+    #[pyo3(get)]
+    pub y_max: f64,
+    #[pyo3(get)]
+    pub area: f64,
+}
+
+#[pyfunction(signature = (exterior, max_aspect_ratio=None))]
+pub fn solve_axis_aligned_py(
+    exterior: Vec<(f64, f64)>,
+    max_aspect_ratio: Option<f64>,
+) -> PyResult<PyAxisAlignedResult> {
+    if exterior.len() < 3 {
+        return Err(PyValueError::new_err("polygon exterior must contain at least 3 points"));
+    }
+
+    let coords: Vec<Coord<f64>> = exterior
+        .into_iter()
+        .map(|(x, y)| Coord { x, y })
+        .collect();
+    let exterior_ls = LineString::from(coords);
+    let polygon = Polygon::new(exterior_ls, vec![]);
+
+    let mut opts = AxisAlignedOptions::default();
+    if let Some(ratio) = max_aspect_ratio {
+        opts.max_ratio = ratio;
+    }
+
+    let result = solve_axis_aligned(&polygon, &opts)
+        .ok_or_else(|| PyValueError::new_err("solve failed"))?;
+
+    Ok(PyAxisAlignedResult {
+        x_min: result.x_min,
+        y_min: result.y_min,
+        x_max: result.x_max,
+        y_max: result.y_max,
+        area: result.area(),
+    })
+}
+
+#[pyfunction]
+fn axis_aligned_demo() -> PyResult<String> {
+    let result = solve_axis_aligned_py(
+        vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)],
+        None,
+    )?;
+    Ok(format!(
+        "area={:.3}, bounds=({:.3}, {:.3}, {:.3}, {:.3})",
+        result.area, result.x_min, result.y_min, result.x_max, result.y_max
+    ))
+}
+
+// ─── Module registration ──────────────────────────────────────────────────
+
 #[pymodule]
 fn _native(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyOrientedLirResult>()?;
     m.add_function(wrap_pyfunction!(solve_oriented_lir_py, m)?)?;
     m.add_function(wrap_pyfunction!(oriented_lir_demo, m)?)?;
+
+    m.add_class::<PyAxisAlignedResult>()?;
+    m.add_function(wrap_pyfunction!(solve_axis_aligned_py, m)?)?;
+    m.add_function(wrap_pyfunction!(axis_aligned_demo, m)?)?;
+
     Ok(())
 }

@@ -6,17 +6,17 @@
 pub mod candidates;
 pub mod expand;
 pub mod fast;
-pub mod grid;
-pub mod histogram;
 pub mod prepare;
-pub mod sdf;
 
 use std::collections::HashMap;
 
-use geo::{Area, BoundingRect, Centroid, Contains, ConvexHull};
+use geo::{Area, BoundingRect, Centroid, ConvexHull};
 use geo_types::{Coord, LineString, Point, Polygon};
 use ordered_float::OrderedFloat;
+use rayon::prelude::*;
 
+use crate::axis_aligned::{solve_axis_rect_bcrs, solve_axis_rect_grid};
+use crate::axis_aligned::sdf::polygon_sdf;
 use crate::geometry::{rotate_polygon, rotate_polygon_around};
 use crate::shared::{LirError, Rectangle, Result};
 
@@ -25,11 +25,7 @@ use crate::gpu::GpuContext;
 pub use candidates::{edge_candidate_angles, upper_bound_area};
 pub use expand::expand_rect_to_boundary;
 pub use fast::maybe_fast_path;
-pub use grid::{solve_axis_rect_bcrs, solve_axis_rect_grid};
-pub use histogram::{lrih, lrih_vp};
 pub use prepare::{prepare_polygon, simplify_for_solve};
-pub use sdf::{best_effort_shrink, certify_rect, polygon_sdf, rect_sdf_max};
-
 // ─── Tuning constants (mirror Python defaults) ───────────────────────────
 const PHASE_A_HALFWIDTH: f64 = 3.0;
 const PHASE_A_XATOL: f64 = 0.02;
@@ -272,9 +268,6 @@ fn heuristic_candidates(
     let hull = poly.convex_hull();
     let (simplified, _) = simplify_for_solve(poly);
 
-    let mut raw: Vec<(f64, f64, (f64, f64, f64, f64))> = Vec::new();
-    let mut best_area = 0.0_f64;
-
     let solve_coarse = |angle_f: f64| -> Option<(f64, f64, f64, f64, f64)> {
         let rot_s = rotate_polygon(&simplified, -angle_f);
         solve_axis_rect_grid(&rot_s, grid_coarse, max_ratio)
@@ -282,22 +275,16 @@ fn heuristic_candidates(
 
     let edge_angles = edge_candidate_angles(poly, 4.0, 12);
 
-    for &a in &edge_angles {
-        let ub = upper_bound_area(&hull, a, max_ratio, centroid);
-        if ub <= best_area * PRUNE_MARGIN {
-            continue;
-        }
-        if let Some((x0, y0, x1, y1, area)) = solve_coarse(a) {
-            if area > 0.0 {
-                raw.push((area, a, (x0, y0, x1, y1)));
-            }
-            if area > best_area {
-                best_area = area;
-            }
-        }
-    }
+    // Parallel: evaluate all edge angles independently
+    let mut raw: Vec<(f64, f64, (f64, f64, f64, f64))> = edge_angles
+        .par_iter()
+        .filter_map(|&a| {
+            solve_coarse(a).map(|(x0, y0, x1, y1, area)| (area, a, (x0, y0, x1, y1)))
+        })
+        .collect();
 
-    // Fill with regular angles if too few candidates
+    // Serial fallback: fill with regular angles if too few candidates
+    let mut best_area = raw.iter().map(|r| r.0).fold(0.0_f64, f64::max);
     if raw.len() < 3 {
         for a_int in (0..90).step_by(angle_step) {
             let a = a_int as f64;
@@ -799,53 +786,6 @@ struct AngleTrial {
     seed_area: f64,
 }
 
-// ─── Public entry point ────────────────────────────────────────────────────
-
-/// Build an oriented rectangle polygon from its AABB and rotation angle.
-/// Uses the analytical formula: W = w|cos| + h|sin|, H = w|sin| + h|cos|
-fn aabb_to_oriented_rect(x0: f64, y0: f64, x1: f64, y1: f64, angle_deg: f64) -> Polygon<f64> {
-    let cx = (x0 + x1) * 0.5;
-    let cy = (y0 + y1) * 0.5;
-    let wa = x1 - x0;
-    let ha = y1 - y0;
-    if angle_deg.abs() <= 0.01 || wa <= 0.0 || ha <= 0.0 {
-        return Polygon::new(
-            LineString::from(vec![
-                Coord { x: x0, y: y0 }, Coord { x: x1, y: y0 },
-                Coord { x: x1, y: y1 }, Coord { x: x0, y: y1 },
-                Coord { x: x0, y: y0 },
-            ]),
-            vec![],
-        );
-    }
-    let rad = angle_deg.to_radians();
-    let c = rad.cos().abs();
-    let s = rad.sin().abs();
-    let cs = c * c - s * s;
-    let (w, h) = if cs.abs() > 1e-14 {
-        let w = (wa * c - ha * s) / cs;
-        let h = (ha * c - wa * s) / cs;
-        (w.abs(), h.abs())
-    } else {
-        let wh = wa / (c + s);
-        (wh, wh)
-    };
-    let hw = w * 0.5;
-    let hh = h * 0.5;
-    let rad = angle_deg.to_radians();
-    let c = rad.cos();
-    let s = rad.sin();
-    Polygon::new(
-        LineString::from(vec![
-            Coord { x: cx - hw * c - hh * s, y: cy - hw * s + hh * c },
-            Coord { x: cx + hw * c - hh * s, y: cy + hw * s + hh * c },
-            Coord { x: cx + hw * c + hh * s, y: cy + hw * s - hh * c },
-            Coord { x: cx - hw * c + hh * s, y: cy - hw * s - hh * c },
-            Coord { x: cx - hw * c - hh * s, y: cy - hw * s + hh * c },
-        ]),
-        vec![],
-    )
-}
 
 /// Solve the largest inscribed rectangle using BCRS + SDF pipeline.
 ///

@@ -1,4 +1,4 @@
-//! Grid-based axis-aligned rectangle solvers.
+//! Grid-based axis-aligned rectangle solvers used by the BCRS pipeline.
 //!
 //! Port of `_solve_axis_rect_grid` (uniform coarse grid) and
 //! `_solve_axis_rect_bcrs` (vertex-coordinate grid) from `bcrs_fast_worker.py`.
@@ -6,7 +6,7 @@
 use geo::{BoundingRect, Contains};
 use geo_types::{Point, Polygon};
 
-use crate::bcrs::histogram::{lrih, lrih_vp};
+use crate::axis_aligned::histogram::{lrih, lrih_vp};
 
 // ─── Uniform-grid solver (coarse / Brent) ─────────────────────────────────
 
@@ -161,7 +161,6 @@ pub fn solve_axis_rect_bcrs(
     best
 }
 
-#[cfg(any(feature = "gpu", not(feature = "gpu")))]
 fn fallback_to_cpu_mask(poly: &Polygon<f64>, xs: &[f64], ys: &[f64], mask: &mut [Vec<bool>], grid_steps: usize) {
     for r in 0..grid_steps {
         for c in 0..grid_steps {
@@ -171,7 +170,6 @@ fn fallback_to_cpu_mask(poly: &Polygon<f64>, xs: &[f64], ys: &[f64], mask: &mut 
     }
 }
 
-#[cfg(any(feature = "gpu", not(feature = "gpu")))]
 fn fallback_to_cpu_bcrs_mask(poly: &Polygon<f64>, xs: &[f64], ys: &[f64], mask: &mut [Vec<bool>], n_cols: usize, n_rows: usize) {
     for r in 0..n_rows {
         let cy = (ys[r] + ys[r + 1]) * 0.5;

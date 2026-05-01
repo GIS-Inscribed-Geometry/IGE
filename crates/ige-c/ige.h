@@ -26,7 +26,7 @@ typedef struct {
 } IgeRectangle;
 
 /**
- * @brief Solver configuration options
+ * @brief Oriented solver configuration options
  */
 typedef struct {
     double rotation_degrees;   ///< Rotation angle (0 = axis-aligned)
@@ -36,7 +36,14 @@ typedef struct {
 } IgeOptions;
 
 /**
- * @brief Get default solver options
+ * @brief Axis-aligned solver configuration options
+ */
+typedef struct {
+    double max_aspect_ratio;  ///< Maximum aspect ratio (0 = unlimited)
+} IgeAxisAlignedOptions;
+
+/**
+ * @brief Get default oriented solver options
  *
  * @return Default IgeOptions structure
  */
@@ -50,23 +57,34 @@ IgeOptions ige_options_default(void);
  * @param options Solver options (NULL for defaults)
  * @param result Output rectangle result
  * @return 0 on success, -1 on error
- *
- * @example
- * @code
- * IgeRectangle rect;
- * IgeOptions opts = ige_options_default();
- * double coords[] = {0, 0, 10, 0, 10, 10, 0, 10, 0, 0};
- *
- * if (ige_solve(coords, 10, &opts, &rect) == 0) {
- *     printf("Rectangle found: [%.2f, %.2f] to [%.2f, %.2f]\n",
- *            rect.x_min, rect.y_min, rect.x_max, rect.y_max);
- * }
- * @endcode
  */
 int ige_solve(
     const double *coords,
     size_t coords_len,
     const IgeOptions *options,
+    IgeRectangle *result
+);
+
+/**
+ * @brief Get default axis-aligned solver options
+ *
+ * @return Default IgeAxisAlignedOptions structure
+ */
+IgeAxisAlignedOptions ige_axis_aligned_options_default(void);
+
+/**
+ * @brief Solve for the largest axis-aligned rectangle
+ *
+ * @param coords Array of polygon coordinates [x0, y0, x1, y1, ...]
+ * @param coords_len Number of elements in coords array (must be even, >= 6)
+ * @param options Axis-aligned solver options (NULL for defaults)
+ * @param result Output rectangle result
+ * @return 0 on success, -1 on error
+ */
+int ige_solve_axis_aligned(
+    const double *coords,
+    size_t coords_len,
+    const IgeAxisAlignedOptions *options,
     IgeRectangle *result
 );
 

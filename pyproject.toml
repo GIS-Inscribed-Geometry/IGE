@@ -5,10 +5,26 @@ build-backend = "maturin"
 [project]
 name = "liriap"
 version = "0.1.0"
-description = "Inscribed Geometry Engine Python bindings"
+description = "Inscribed Geometry Engine — fast largest-inscribed-rectangle solver"
+readme = "README.md"
 requires-python = ">=3.9"
+license = {text = "MIT"}
+keywords = ["geometry", "polygon", "rectangle", "inscribed", "lir"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: GIS",
+]
+
+[project.urls]
+Source = "https://github.com/anomalyco/IGE"
+Documentation = "https://github.com/anomalyco/IGE"
+"QGIS Plugin" = "https://github.com/anomalyco/IGE/tree/main/qgis_plugin"
 
 [tool.maturin]
 module-name = "liriap._native"
 python-source = "python"
-manifest-path = "crates/liriap-py/Cargo.toml"
+manifest-path = "crates/ige-py/Cargo.toml"

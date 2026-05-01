@@ -8,7 +8,7 @@ use geo::{Area, BoundingRect, Centroid, ConvexHull};
 use geo_types::{Coord, Point, Polygon};
 
 use crate::bcrs::expand::expand_rect_to_boundary;
-use crate::bcrs::grid::solve_axis_rect_grid;
+use crate::axis_aligned::solve_axis_rect_grid;
 use crate::geometry::rotate_polygon;
 
 /// Try the convex fast path. Returns `(certified_polygon, area, angle_deg, ratio)` or `None`.
