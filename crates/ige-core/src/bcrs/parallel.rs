@@ -23,7 +23,6 @@ use super::expand::expand_rect_to_boundary;
 use super::certify::{certify_and_adjust, best_effort_shrink_to_cover};
 use super::{BcrsOptions, BcrsResult};
 use crate::axis_aligned::histogram::{lrih, lrih_vp};
-use crate::geometry::rotate_polygon;
 use crate::shared::{LirError, Rectangle, Result};
 
 

@@ -2,7 +2,6 @@
 //!
 //! Tests various polygon shapes and solver configurations.
 
-use geo::Area;
 use ige_core::{solve_oriented_lir, SolverOptions};
 use geo_types::{Coord, LineString, Polygon};
 

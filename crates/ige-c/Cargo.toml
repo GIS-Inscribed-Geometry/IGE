@@ -19,3 +19,4 @@ geo-types.workspace = true
 [features]
 default = []
 gpu = ["ige-core/gpu"]
+geos = ["ige-core/geos"]

@@ -6,10 +6,12 @@
 //!   cargo run --package ige-core --example visualize
 //!   cargo run --package ige-core --example visualize -- --baseline
 //!   cargo run --package ige-core --example visualize -- --limit 50
+//!   cargo run --package ige-core --example visualize --features geos -- --mic-compare --real-only --file crates/ige-core/tests/real_world_data/realworld.geojson
 
 use geo::Area;
 use geo_types::{Coord, LineString, Polygon};
 use ige_core::bcrs::{solve_bcrs, BcrsOptions};
+use ige_core::mic::{maximum_inscribed_circle, MicEngine, MicOptions, MicResult, RobustMode};
 use ige_core::{solve_axis_aligned, AxisAlignedOptions};
 use rayon::prelude::*;
 use serde_json::Value;
@@ -30,8 +32,11 @@ fn parse_ring(value: &Value) -> Option<Vec<Coord<f64>>> {
 }
 
 fn parse_polygon(geom: &Value) -> Option<Polygon<f64>> {
-    let coords = geom.get("coordinates")?;
-    let arr = coords.as_array()?;
+    let arr = geom.get("coordinates")?.as_array()?;
+    parse_polygon_coords(arr)
+}
+
+fn parse_polygon_coords(arr: &[Value]) -> Option<Polygon<f64>> {
     let ext_ring = arr.get(0)?;
     let exterior = parse_ring(ext_ring)?;
     if exterior.len() < 3 {
@@ -51,7 +56,27 @@ fn parse_polygon(geom: &Value) -> Option<Polygon<f64>> {
     }
 }
 
-fn load_polygons_from(path: Option<&str>) -> Vec<(usize, Polygon<f64>)> {
+fn parse_feature_polygons(geom: &Value) -> Vec<Polygon<f64>> {
+    let Some(geom_type) = geom.get("type").and_then(|v| v.as_str()) else {
+        return Vec::new();
+    };
+    match geom_type {
+        "Polygon" => parse_polygon(geom).into_iter().collect(),
+        "MultiPolygon" => {
+            let Some(all_polys) = geom.get("coordinates").and_then(|v| v.as_array()) else {
+                return Vec::new();
+            };
+            all_polys
+                .iter()
+                .filter_map(|poly_coords| poly_coords.as_array())
+                .filter_map(|poly_arr| parse_polygon_coords(poly_arr))
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn load_polygons_from(path: Option<&str>) -> Vec<(String, Polygon<f64>)> {
     let content = match path {
         Some(p) => fs::read_to_string(p).expect("Failed to read file"),
         None => include_str!("../tests/real_world_data/realworld.geojson").to_string(),
@@ -59,14 +84,31 @@ fn load_polygons_from(path: Option<&str>) -> Vec<(usize, Polygon<f64>)> {
     let json: Value = serde_json::from_str(&content).expect("Failed to parse GeoJSON");
     let features = json.get("features").expect("No features");
     let arr = features.as_array().expect("Features is not array");
-    arr.iter()
-        .filter_map(|f| {
-            let id = f.get("properties")?.get("fid")?.as_u64()? as usize;
-            let geom = f.get("geometry")?;
-            let poly = parse_polygon(geom)?;
-            Some((id, poly))
-        })
-        .collect()
+    let mut out = Vec::new();
+    for (feature_idx, f) in arr.iter().enumerate() {
+        let Some(geom) = f.get("geometry") else {
+            continue;
+        };
+        let polys = parse_feature_polygons(geom);
+        if polys.is_empty() {
+            continue;
+        }
+        let fid = f
+            .get("properties")
+            .and_then(|p| p.get("fid"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or((feature_idx + 1) as u64);
+        let multi = polys.len() > 1;
+        for (poly_idx, poly) in polys.into_iter().enumerate() {
+            let id = if multi {
+                format!("Real #{fid} [{}]", poly_idx + 1)
+            } else {
+                format!("Real #{fid}")
+            };
+            out.push((id, poly));
+        }
+    }
+    out
 }
 
 fn make_l_shape(cx: f64, cy: f64, size: f64) -> Polygon<f64> {
@@ -222,8 +264,129 @@ fn gen_svg_card(
     )
 }
 
+fn gen_mic_card(
+    id: &str,
+    poly: &Polygon<f64>,
+    exact: Option<&MicResult>,
+    geos: Option<&MicResult>,
+    exact_err: Option<&str>,
+    geos_err: Option<&str>,
+    exact_ms: f64,
+    geos_ms: f64,
+) -> String {
+    let (min_x, min_y, max_x, max_y) = get_polygon_bounds(poly);
+    let poly_area = poly.unsigned_area();
+
+    let svg_size = 220.0;
+    let pad = 10.0;
+    let draw_size = svg_size - 2.0 * pad;
+    let span_x = max_x - min_x;
+    let span_y = max_y - min_y;
+    let scale = if span_x > 0.0 && span_y > 0.0 {
+        (draw_size / span_x).min(draw_size / span_y)
+    } else {
+        draw_size
+    };
+    let ox = pad + (draw_size - span_x * scale) * 0.5;
+    let oy = pad + (draw_size - span_y * scale) * 0.5;
+
+    let to_svg = |x: f64, y: f64| (ox + (x - min_x) * scale, oy + (y - min_y) * scale);
+
+    let ext_pts: String = poly.exterior().0.iter()
+        .map(|c| { let (sx, sy) = to_svg(c.x, c.y); format!("{sx:.1},{sy:.1}") })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let holes_svg: String = poly.interiors().iter()
+        .map(|hole| {
+            let pts: String = hole.0.iter()
+                .map(|c| { let (sx, sy) = to_svg(c.x, c.y); format!("{sx:.1},{sy:.1}") })
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!(r#"<polygon class="hole" points="{pts}"/>"#)
+        })
+        .collect();
+
+    let exact_svg = exact.map(|mic| {
+        let (cx, cy) = to_svg(mic.center.x(), mic.center.y());
+        let r = (mic.radius * scale).max(0.5);
+        format!(
+            r#"<circle class="mic-exact" cx="{cx:.2}" cy="{cy:.2}" r="{r:.2}"/><circle class="pt-exact" cx="{cx:.2}" cy="{cy:.2}" r="2.2"/>"#
+        )
+    }).unwrap_or_default();
+
+    let geos_svg = geos.map(|mic| {
+        let (cx, cy) = to_svg(mic.center.x(), mic.center.y());
+        let r = (mic.radius * scale).max(0.5);
+        format!(
+            r#"<circle class="mic-geos" cx="{cx:.2}" cy="{cy:.2}" r="{r:.2}"/><circle class="pt-geos" cx="{cx:.2}" cy="{cy:.2}" r="2.2"/>"#
+        )
+    }).unwrap_or_default();
+
+    let exact_info = match exact {
+        Some(m) => format!("Exact radius: {:.4}<br/>", m.radius),
+        None => format!("Exact: error ({})<br/>", exact_err.unwrap_or("unknown")),
+    };
+    let geos_info = match geos {
+        Some(m) => format!("GEOS radius: {:.4}<br/>", m.radius),
+        None => format!("GEOS: error ({})<br/>", geos_err.unwrap_or("unknown")),
+    };
+
+    let speed_line = if exact_ms > 0.0 && geos_ms > 0.0 {
+        let ratio = exact_ms / geos_ms;
+        let label = if ratio <= 1.0 {
+            format!("{:.1}x faster", 1.0 / ratio.max(1e-12))
+        } else {
+            format!("{:.1}x slower", ratio)
+        };
+        format!(
+            r#"<span class="speed-exact">Exact: {:.2}ms</span> &nbsp; <span class="speed-geos">GEOS: {:.2}ms</span> &nbsp; <span class="speed-label">{}</span><br/>"#,
+            exact_ms, geos_ms, label
+        )
+    } else {
+        format!("Exact: {:.2}ms &nbsp; GEOS: {:.2}ms<br/>", exact_ms, geos_ms)
+    };
+
+    let rel_info = match (exact, geos) {
+        (Some(e), Some(g)) if g.radius > 0.0 => {
+            let rel_err = (e.radius - g.radius).abs() / g.radius;
+            format!("Rel err vs GEOS: {:.3}%<br/>", rel_err * 100.0)
+        }
+        _ => String::new(),
+    };
+
+    format!(
+        r#"<div class="card">
+            <svg viewBox="0 0 {s:.0} {s:.0}">
+                <polygon class="polygon" points="{p}"/>
+                {h}
+                {ex}
+                {ge}
+            </svg>
+            <div class="info">
+                <strong>{id}</strong><br/>
+                Polygon area: {pa:.1}<br/>
+                {exact_info}{geos_info}{rel_info}{speed}
+            </div>
+        </div>"#,
+        s = svg_size,
+        p = ext_pts,
+        h = holes_svg,
+        ex = exact_svg,
+        ge = geos_svg,
+        id = id,
+        pa = poly_area,
+        exact_info = exact_info,
+        geos_info = geos_info,
+        rel_info = rel_info,
+        speed = speed_line,
+    )
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let use_mic_compare = args.contains(&"--mic-compare".to_string());
+    let real_only = args.contains(&"--real-only".to_string());
     let use_parallel = args.contains(&"--parallel".to_string());
     let use_bcrs = !args.contains(&"--baseline".to_string());
     let use_json = args.contains(&"--json".to_string());
@@ -236,48 +399,215 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str());
 
-    let algo_name = if use_parallel { "BCRS parallel" } else if use_bcrs { "BCRS" } else { "axis-aligned" };
+    let algo_name = if use_mic_compare {
+        "MIC exact vs GEOS"
+    } else if use_parallel {
+        "BCRS parallel"
+    } else if use_bcrs {
+        "BCRS"
+    } else {
+        "axis-aligned"
+    };
 
     let real = load_polygons_from(file_path);
     eprintln!("Loaded {} polygons from geojson", real.len());
 
-    let mut all_polygons: Vec<(String, Polygon<f64>)> = vec![
-        ("Square 10x10".into(), Polygon::new(
-            LineString::from(vec![
-                Coord { x: 0.0, y: 0.0 }, Coord { x: 10.0, y: 0.0 },
-                Coord { x: 10.0, y: 10.0 }, Coord { x: 0.0, y: 10.0 },
-                Coord { x: 0.0, y: 0.0 },
-            ]), vec![],
-        )),
-        ("Rectangle 20x5".into(), Polygon::new(
-            LineString::from(vec![
-                Coord { x: 0.0, y: 0.0 }, Coord { x: 20.0, y: 0.0 },
-                Coord { x: 20.0, y: 5.0 }, Coord { x: 0.0, y: 5.0 },
-                Coord { x: 0.0, y: 0.0 },
-            ]), vec![],
-        )),
-        ("Triangle".into(), Polygon::new(
-            LineString::from(vec![
-                Coord { x: 0.0, y: 0.0 }, Coord { x: 10.0, y: 0.0 },
-                Coord { x: 5.0, y: 10.0 }, Coord { x: 0.0, y: 0.0 },
-            ]), vec![],
-        )),
-        ("L-Shape".into(), make_l_shape(5.0, 5.0, 5.0)),
-        ("U-Shape".into(), make_u_shape(5.0, 5.0, 5.0)),
-        ("Zigzag".into(), make_zigzag(5.0, 5.0, 5.0)),
-    ];
-    for (id, poly) in real {
-        let vc = poly.exterior().0.len() - 1;
-        all_polygons.push((format!("Real #{} ({}v)", id, vc), poly));
-        if let Some(n) = limit {
-            if all_polygons.len() >= n { break; }
-        }
+    let mut all_polygons: Vec<(String, Polygon<f64>)> = if real_only || use_mic_compare {
+        real
+    } else {
+        let mut data = vec![
+            ("Square 10x10".into(), Polygon::new(
+                LineString::from(vec![
+                    Coord { x: 0.0, y: 0.0 }, Coord { x: 10.0, y: 0.0 },
+                    Coord { x: 10.0, y: 10.0 }, Coord { x: 0.0, y: 10.0 },
+                    Coord { x: 0.0, y: 0.0 },
+                ]), vec![],
+            )),
+            ("Rectangle 20x5".into(), Polygon::new(
+                LineString::from(vec![
+                    Coord { x: 0.0, y: 0.0 }, Coord { x: 20.0, y: 0.0 },
+                    Coord { x: 20.0, y: 5.0 }, Coord { x: 0.0, y: 5.0 },
+                    Coord { x: 0.0, y: 0.0 },
+                ]), vec![],
+            )),
+            ("Triangle".into(), Polygon::new(
+                LineString::from(vec![
+                    Coord { x: 0.0, y: 0.0 }, Coord { x: 10.0, y: 0.0 },
+                    Coord { x: 5.0, y: 10.0 }, Coord { x: 0.0, y: 0.0 },
+                ]), vec![],
+            )),
+            ("L-Shape".into(), make_l_shape(5.0, 5.0, 5.0)),
+            ("U-Shape".into(), make_u_shape(5.0, 5.0, 5.0)),
+            ("Zigzag".into(), make_zigzag(5.0, 5.0, 5.0)),
+        ];
+        data.extend(real);
+        data
+    };
+    if let Some(n) = limit {
+        all_polygons.truncate(n);
     }
     eprintln!("Algorithm: {algo_name}");
     eprintln!("Total shapes: {}", all_polygons.len());
 
     let out_dir = std::env::current_dir().unwrap().join("target").join("ige_output");
     fs::create_dir_all(&out_dir).unwrap();
+
+    if use_mic_compare {
+        let exact_opts = MicOptions {
+            engine: MicEngine::ExactOnly,
+            robust_mode: RobustMode::Filtered,
+        };
+        let geos_opts = MicOptions {
+            engine: MicEngine::FallbackOnly,
+            robust_mode: RobustMode::Filtered,
+        };
+
+        let wall_start = std::time::Instant::now();
+        let mut results: Vec<(usize, String, Option<f64>, Option<f64>, f64, f64)> = all_polygons
+            .par_iter()
+            .enumerate()
+            .map(|(idx, (id, poly))| {
+                let t0 = std::time::Instant::now();
+                let exact = maximum_inscribed_circle(poly, &exact_opts);
+                let exact_ms = t0.elapsed().as_secs_f64() * 1000.0;
+
+                let t1 = std::time::Instant::now();
+                let geos = maximum_inscribed_circle(poly, &geos_opts);
+                let geos_ms = t1.elapsed().as_secs_f64() * 1000.0;
+
+                let exact_err = exact.as_ref().err().map(|e| e.to_string());
+                let geos_err = geos.as_ref().err().map(|e| e.to_string());
+                let exact_radius = exact.as_ref().ok().map(|r| r.radius);
+                let geos_radius = geos.as_ref().ok().map(|r| r.radius);
+                let card = gen_mic_card(
+                    id,
+                    poly,
+                    exact.as_ref().ok(),
+                    geos.as_ref().ok(),
+                    exact_err.as_deref(),
+                    geos_err.as_deref(),
+                    exact_ms,
+                    geos_ms,
+                );
+                (idx, card, exact_radius, geos_radius, exact_ms, geos_ms)
+            })
+            .collect();
+        let wall_total_ms = wall_start.elapsed().as_secs_f64() * 1000.0;
+        results.sort_by_key(|(idx, ..)| *idx);
+
+        let mut cards = String::new();
+        let mut exact_ok = 0usize;
+        let mut geos_ok = 0usize;
+        let mut both_ok = 0usize;
+        let mut rel_errs = Vec::new();
+        let mut exact_ms_acc = 0.0;
+        let mut geos_ms_acc = 0.0;
+        for (_idx, card, exact_r, geos_r, exact_ms, geos_ms) in &results {
+            cards.push_str(card);
+            exact_ms_acc += *exact_ms;
+            geos_ms_acc += *geos_ms;
+            if exact_r.is_some() {
+                exact_ok += 1;
+            }
+            if geos_r.is_some() {
+                geos_ok += 1;
+            }
+            if let (Some(e), Some(g)) = (*exact_r, *geos_r) {
+                if g > 0.0 {
+                    both_ok += 1;
+                    rel_errs.push((e - g).abs() / g * 100.0);
+                }
+            }
+        }
+        rel_errs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let rel_mean = if rel_errs.is_empty() {
+            0.0
+        } else {
+            rel_errs.iter().sum::<f64>() / rel_errs.len() as f64
+        };
+        let rel_median = if rel_errs.is_empty() {
+            0.0
+        } else {
+            rel_errs[rel_errs.len() / 2]
+        };
+        let n_results = results.len();
+        let avg_exact_ms = if n_results > 0 { exact_ms_acc / n_results as f64 } else { 0.0 };
+        let avg_geos_ms = if n_results > 0 { geos_ms_acc / n_results as f64 } else { 0.0 };
+
+        if use_json {
+            let json = serde_json::json!({
+                "mode": "mic_compare",
+                "total": all_polygons.len(),
+                "exact_ok": exact_ok,
+                "geos_ok": geos_ok,
+                "both_ok": both_ok,
+                "rel_err_pct": { "median": rel_median, "mean": rel_mean },
+                "avg_exact_ms": avg_exact_ms,
+                "avg_geos_ms": avg_geos_ms,
+                "speed_ratio": if avg_geos_ms > 0.0 { avg_exact_ms / avg_geos_ms } else { 0.0 },
+                "wall_ms": wall_total_ms,
+            });
+            println!("{}", serde_json::to_string(&json).unwrap());
+            return;
+        }
+
+        let speed_ratio = if avg_geos_ms > 0.0 { avg_exact_ms / avg_geos_ms } else { 0.0 };
+        let speed_label = if speed_ratio <= 1.0 {
+            format!("{:.1}x <span class=speed-label>faster</span>", 1.0 / speed_ratio.max(1e-12))
+        } else {
+            format!("{:.1}x <span class=speed-label>slower</span>", speed_ratio)
+        };
+
+        let path = out_dir.join("index.html");
+        let html = format!(r#"<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>IGE Visual Preview — MIC compare</title>
+<style>
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;margin:20px;background:#1a1a2e;color:#eee}}
+h1{{color:#eee;margin-bottom:10px}}
+.grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:15px}}
+.card{{background:#16213e;border-radius:8px;padding:10px;box-shadow:0 2px 8px rgba(0,0,0,.3)}}
+svg{{width:100%;height:220px;background:#0f0f23;border-radius:4px}}
+.polygon{{fill:#e9456033;stroke:#ff6b6b;stroke-width:1}}
+.hole{{fill:none;stroke:#666;stroke-width:1;stroke-dasharray:3}}
+.mic-exact{{fill:none;stroke:#60a5fa;stroke-width:2}}
+.pt-exact{{fill:#60a5fa;stroke:none}}
+.mic-geos{{fill:none;stroke:#22c55e;stroke-width:2;stroke-dasharray:4 2}}
+.pt-geos{{fill:#22c55e;stroke:none}}
+.info{{margin-top:8px;font-size:11px;color:#aaa;line-height:1.4}}
+.speed-exact{{color:#60a5fa}}
+.speed-geos{{color:#22c55e}}
+.speed-label{{color:#fbbf24;font-weight:bold}}
+.stats{{background:#16213e;padding:20px;border-radius:8px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.3)}}
+.stats p{{margin:5px 0;color:#ccc}}
+.stats strong{{color:#fff}}
+</style></head><body>
+<h1>IGE — MIC exact vs GEOS</h1>
+<p style="color:#aaa;">Blue = exact solver, Green dashed = GEOS fallback &nbsp;|&nbsp; <span class="speed-exact">Exact time</span> vs <span class="speed-geos">GEOS time</span></p>
+<div class="stats">
+<p><strong>Exact success:</strong> {exact_ok}/{n} &nbsp; <strong>GEOS success:</strong> {geos_ok}/{n} &nbsp; <strong>Both:</strong> {both_ok}</p>
+<p><strong>Rel err vs GEOS:</strong> median {rel_median:.3}% &nbsp; mean {rel_mean:.3}%</p>
+<p><strong><span class=speed-exact>Exact avg:</span></strong> {avg_exact_ms:.3}ms/shape &nbsp; <strong><span class=speed-geos>GEOS avg:</span></strong> {avg_geos_ms:.3}ms/shape &nbsp; <strong>Exact is {sit}</strong></p>
+<p><strong>Total time:</strong> {wall_total_ms:.1}ms</p>
+</div>
+<div class="grid">{cards}</div>
+</body></html>"#,
+            n = all_polygons.len(),
+            exact_ok = exact_ok,
+            geos_ok = geos_ok,
+            both_ok = both_ok,
+            rel_median = rel_median,
+            rel_mean = rel_mean,
+            wall_total_ms = wall_total_ms,
+            avg_exact_ms = avg_exact_ms,
+            avg_geos_ms = avg_geos_ms,
+            sit = speed_label,
+            cards = cards,
+        );
+        fs::write(&path, &html).unwrap();
+        println!("Generated: {}  ({algo_name})", path.display());
+        return;
+    }
 
     // Wall-clock timer for the parallel section
     let wall_start = std::time::Instant::now();

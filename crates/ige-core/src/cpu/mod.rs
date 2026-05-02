@@ -10,6 +10,7 @@ pub use crate::axis_aligned::{
 };
 
 pub use crate::geometry::rotate_polygon;
+pub use crate::mic::{maximum_inscribed_circle, maximum_inscribed_circle_multipolygon, MicEngine, MicError, MicOptions, MicResult, MicUsedEngine, RobustMode};
 
 pub use crate::bcrs::solve_bcrs;
 pub use crate::bcrs::parallel::solve_bcrs_parallel;

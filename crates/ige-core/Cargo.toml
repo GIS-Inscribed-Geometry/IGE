@@ -23,10 +23,15 @@ harness = false
 name = "bcrs_regression"
 harness = false
 
+[[bench]]
+name = "mic"
+harness = false
+
 [dependencies]
 serde = { workspace = true, optional = true }
 geo.workspace = true
 geo-types.workspace = true
+geos = { workspace = true, optional = true }
 thiserror.workspace = true
 ordered-float.workspace = true
 rustc-hash.workspace = true
@@ -46,3 +51,4 @@ default = ["cpu"]
 serde = ["dep:serde", "geo/serde"]
 cpu = []
 gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:anyhow"]
+geos = ["dep:geos"]

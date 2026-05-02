@@ -1,0 +1,178 @@
+//! Maximum Inscribed Circle (MIC) solvers for polygonal inputs.
+
+pub mod certify;
+pub mod index;
+pub mod input;
+pub mod solver;
+pub mod workspace;
+
+use geo_types::{MultiPolygon, Point, Polygon};
+use thiserror::Error;
+
+use self::input::HostPolygon;
+use self::solver::exact::solve_exact;
+use self::workspace::MicWorkspace;
+
+/// Engine selection for MIC solving.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MicEngine {
+    /// Use the native Rust polygon-specialized solver only.
+    ExactOnly,
+    /// Use GEOS fallback only.
+    FallbackOnly,
+    /// Try exact first, then GEOS fallback if exact fails.
+    ExactThenGeos,
+}
+
+/// Numeric robustness mode for the exact engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RobustMode {
+    /// Fast finite-precision mode.
+    FastF64,
+    /// Extra candidate filtering and certification.
+    Filtered,
+}
+
+/// Solver configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MicOptions {
+    pub engine: MicEngine,
+    pub robust_mode: RobustMode,
+}
+
+impl Default for MicOptions {
+    fn default() -> Self {
+        Self {
+            engine: MicEngine::ExactThenGeos,
+            robust_mode: RobustMode::Filtered,
+        }
+    }
+}
+
+/// Engine that produced the final result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MicUsedEngine {
+    Exact,
+    GeosFallback,
+}
+
+/// MIC solve result.
+#[derive(Debug, Clone)]
+pub struct MicResult {
+    pub center: Point<f64>,
+    pub radius: f64,
+    pub radius_sq: f64,
+    pub support_segments: Vec<usize>,
+    pub candidate_count: usize,
+    pub used_engine: MicUsedEngine,
+    pub component_index: Option<usize>,
+}
+
+/// MIC solver error.
+#[derive(Debug, Error)]
+pub enum MicError {
+    #[error("invalid polygon input: {0}")]
+    InvalidInput(String),
+    #[error("no valid MIC candidate found")]
+    NoCircleFound,
+    #[error("exact MIC solver failed: {0}")]
+    ExactFailed(String),
+    #[error("GEOS fallback feature is not enabled")]
+    GeosFeatureDisabled,
+    #[error("GEOS fallback failed: {0}")]
+    GeosFailed(String),
+    #[error("unsupported GEOS MIC output: {0}")]
+    UnsupportedGeosOutput(String),
+}
+
+/// Solve MIC on a single polygon.
+pub fn maximum_inscribed_circle(
+    poly: &Polygon<f64>,
+    opts: &MicOptions,
+) -> std::result::Result<MicResult, MicError> {
+    let host = HostPolygon::from_polygon(poly)?;
+    solve_on_host_polygon(&host, opts)
+}
+
+/// Solve MIC on a multipolygon by solving each component and keeping the best.
+pub fn maximum_inscribed_circle_multipolygon(
+    multi: &MultiPolygon<f64>,
+    opts: &MicOptions,
+) -> std::result::Result<MicResult, MicError> {
+    if multi.0.is_empty() {
+        return Err(MicError::InvalidInput("multipolygon has no components".to_string()));
+    }
+
+    let mut best: Option<MicResult> = None;
+    let mut last_error: Option<MicError> = None;
+
+    for (idx, poly) in multi.0.iter().enumerate() {
+        match maximum_inscribed_circle(poly, opts) {
+            Ok(mut result) => {
+                result.component_index = Some(idx);
+                let replace = best
+                    .as_ref()
+                    .map(|current| result.radius_sq > current.radius_sq)
+                    .unwrap_or(true);
+                if replace {
+                    best = Some(result);
+                }
+            }
+            Err(err) => {
+                last_error = Some(err);
+            }
+        }
+    }
+
+    best.ok_or_else(|| last_error.unwrap_or(MicError::NoCircleFound))
+}
+
+fn solve_on_host_polygon(
+    host: &HostPolygon,
+    opts: &MicOptions,
+) -> std::result::Result<MicResult, MicError> {
+    let exact_result = run_exact(host, opts);
+
+    match opts.engine {
+        MicEngine::ExactOnly => exact_result,
+        MicEngine::FallbackOnly => run_geos(host, opts),
+        MicEngine::ExactThenGeos => match exact_result {
+            Ok(result) => Ok(result),
+            Err(exact_err) => {
+                #[cfg(feature = "geos")]
+                {
+                    run_geos(host, opts).map_err(|fallback_err| {
+                        MicError::GeosFailed(format!("exact failed ({exact_err}); fallback failed ({fallback_err})"))
+                    })
+                }
+                #[cfg(not(feature = "geos"))]
+                {
+                    Err(exact_err)
+                }
+            }
+        },
+    }
+}
+
+fn run_exact(
+    host: &HostPolygon,
+    opts: &MicOptions,
+) -> std::result::Result<MicResult, MicError> {
+    let mut workspace = MicWorkspace::new(host.clone())?;
+    solve_exact(&mut workspace, opts).map_err(|err| MicError::ExactFailed(err.to_string()))
+}
+
+fn run_geos(
+    host: &HostPolygon,
+    opts: &MicOptions,
+) -> std::result::Result<MicResult, MicError> {
+    #[cfg(feature = "geos")]
+    {
+        self::solver::geos_fallback::solve_with_geos(host, opts)
+    }
+    #[cfg(not(feature = "geos"))]
+    {
+        let _ = (host, opts);
+        Err(MicError::GeosFeatureDisabled)
+    }
+}

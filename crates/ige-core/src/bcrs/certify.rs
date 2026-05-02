@@ -43,6 +43,21 @@ fn build_rect_from_frame(cx: f64, cy: f64, ux: f64, uy: f64, vx: f64, vy: f64, a
     )
 }
 
+fn clamp_half_sides_to_ratio(a: f64, b: f64, max_ratio: f64) -> (f64, f64) {
+    if max_ratio <= 0.0 || a <= 0.0 || b <= 0.0 {
+        return (a, b);
+    }
+    let (mut long, short) = if a >= b { (a, b) } else { (b, a) };
+    if short > 0.0 && long / short > max_ratio {
+        long = short * max_ratio;
+    }
+    if a >= b {
+        (long, short)
+    } else {
+        (short, long)
+    }
+}
+
 /// Maximum SDF at the 8 sample points (4 corners + 4 edge midpoints)
 /// of an oriented rect, expressed as a ``Polygon``.
 pub(crate) fn rect_sdf_max_poly(poly: &Polygon<f64>, rect: &Polygon<f64>) -> f64 {
@@ -72,21 +87,23 @@ pub(crate) fn certify_and_adjust(
     cert_max_shrink: f64,
 ) -> Option<(Polygon<f64>, f64)> {
     let max_sdf = rect_sdf_max_poly(poly, rect);
-    if max_sdf <= cert_eps {
-        let area = rect.unsigned_area();
-        return Some((rect.clone(), area));
-    }
     let corners: Vec<(f64, f64)> = rect.exterior().0.iter().map(|c| (c.x, c.y)).collect();
     let frame = rect_local_frame(&corners)?;
     let (cx, cy, ux, uy, vx, vy, a, b) = frame;
+
+    if max_sdf <= cert_eps {
+        let (a0, b0) = clamp_half_sides_to_ratio(a, b, max_ratio);
+        let final_rect = build_rect_from_frame(cx, cy, ux, uy, vx, vy, a0, b0);
+        if rect_sdf_max_poly(poly, &final_rect) > cert_eps * 10.0 { return None; }
+        let area = final_rect.unsigned_area();
+        return Some((final_rect, area));
+    }
     let shrink = max_sdf + cert_eps;
     if shrink > a.min(b) * cert_max_shrink { return None; }
-    let mut new_a = a - shrink;
+    let new_a = a - shrink;
     let new_b = b - shrink;
     if new_a <= 0.0 || new_b <= 0.0 { return None; }
-    if max_ratio > 0.0 && new_b > 0.0 && new_a / new_b > max_ratio {
-        new_a = new_b * max_ratio;
-    }
+    let (new_a, new_b) = clamp_half_sides_to_ratio(new_a, new_b, max_ratio);
     let final_rect = build_rect_from_frame(cx, cy, ux, uy, vx, vy, new_a, new_b);
     if rect_sdf_max_poly(poly, &final_rect) > cert_eps * 10.0 { return None; }
     let area = final_rect.unsigned_area();
@@ -102,21 +119,24 @@ pub(crate) fn best_effort_shrink_to_cover(
     cert_eps: f64,
 ) -> Option<(Polygon<f64>, f64)> {
     let max_sdf = rect_sdf_max_poly(poly, rect);
-    if max_sdf <= cert_eps {
-        let area = rect.unsigned_area();
-        return Some((rect.clone(), area));
-    }
     let corners: Vec<(f64, f64)> = rect.exterior().0.iter().map(|c| (c.x, c.y)).collect();
     let frame = rect_local_frame(&corners)?;
     let (cx, cy, ux, uy, vx, vy, a0, b0) = frame;
     if a0 <= 0.0 || b0 <= 0.0 { return None; }
+
+    if max_sdf <= cert_eps {
+        let (a, b) = clamp_half_sides_to_ratio(a0, b0, max_ratio);
+        let final_rect = build_rect_from_frame(cx, cy, ux, uy, vx, vy, a, b);
+        if rect_sdf_max_poly(poly, &final_rect) > cert_eps { return None; }
+        let area = final_rect.unsigned_area();
+        return Some((final_rect, area));
+    }
+
     let shrink = max_sdf + cert_eps * 2.0;
-    let mut a = a0 - shrink;
+    let a = a0 - shrink;
     let b = b0 - shrink;
     if a <= 0.0 || b <= 0.0 { return None; }
-    if max_ratio > 0.0 && b > 0.0 && a / b > max_ratio {
-        a = b * max_ratio;
-    }
+    let (a, b) = clamp_half_sides_to_ratio(a, b, max_ratio);
     if a <= 0.0 || b <= 0.0 { return None; }
     let final_rect = build_rect_from_frame(cx, cy, ux, uy, vx, vy, a, b);
     if rect_sdf_max_poly(poly, &final_rect) > cert_eps { return None; }

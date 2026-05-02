@@ -6,6 +6,7 @@
 use libc::{c_double, c_int, size_t};
 use ige_core::{solve_axis_aligned, AxisAlignedOptions, rotate_polygon};
 use ige_core::bcrs::{solve_bcrs, BcrsOptions};
+use ige_core::mic::{maximum_inscribed_circle, MicEngine, MicOptions, MicUsedEngine, RobustMode};
 use geo::BoundingRect;
 use geo_types::{Coord, LineString, Polygon};
 use std::slice;
@@ -17,6 +18,35 @@ pub struct IgeRectangle {
     pub y_min: c_double,
     pub x_max: c_double,
     pub y_max: c_double,
+}
+
+/// C-compatible MIC result.
+#[repr(C)]
+pub struct IgeMicResult {
+    pub center_x: c_double,
+    pub center_y: c_double,
+    pub radius: c_double,
+    pub radius_sq: c_double,
+    pub used_engine: c_int, // 0 = exact, 1 = geos fallback
+    pub candidate_count: size_t,
+    pub component_index: c_int, // -1 when not multipolygon solve
+}
+
+/// C-compatible MIC options.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IgeMicOptions {
+    pub engine: c_int,      // 0 = ExactOnly, 1 = FallbackOnly, 2 = ExactThenGeos
+    pub robust_mode: c_int, // 0 = FastF64, 1 = Filtered
+}
+
+impl Default for IgeMicOptions {
+    fn default() -> Self {
+        Self {
+            engine: 2,
+            robust_mode: 1,
+        }
+    }
 }
 
 /// C-compatible solver options
@@ -60,6 +90,30 @@ impl Default for IgeAxisAlignedOptions {
 impl From<IgeAxisAlignedOptions> for AxisAlignedOptions {
     fn from(opts: IgeAxisAlignedOptions) -> Self {
         AxisAlignedOptions { max_ratio: opts.max_aspect_ratio }
+    }
+}
+
+fn mic_engine_from_raw(value: c_int) -> MicEngine {
+    match value {
+        0 => MicEngine::ExactOnly,
+        1 => MicEngine::FallbackOnly,
+        2 => MicEngine::ExactThenGeos,
+        _ => MicEngine::ExactThenGeos,
+    }
+}
+
+fn robust_mode_from_raw(value: c_int) -> RobustMode {
+    match value {
+        0 => RobustMode::FastF64,
+        1 => RobustMode::Filtered,
+        _ => RobustMode::Filtered,
+    }
+}
+
+fn used_engine_to_raw(value: MicUsedEngine) -> c_int {
+    match value {
+        MicUsedEngine::Exact => 0,
+        MicUsedEngine::GeosFallback => 1,
     }
 }
 
@@ -120,6 +174,73 @@ pub unsafe extern "C" fn ige_solve_axis_aligned(
 #[no_mangle]
 pub unsafe extern "C" fn ige_axis_aligned_options_default() -> IgeAxisAlignedOptions {
     IgeAxisAlignedOptions::default()
+}
+
+/// Get default MIC options.
+#[no_mangle]
+pub unsafe extern "C" fn ige_mic_options_default() -> IgeMicOptions {
+    IgeMicOptions::default()
+}
+
+/// Solve for maximum inscribed circle (C API).
+///
+/// # Safety
+///
+/// - `coords` must point to a valid array of `coords_len` doubles
+/// - Coordinates are interpreted as [x0, y0, x1, y1, x2, y2, ...]
+/// - `result` must point to a valid IgeMicResult
+/// - Returns 0 on success, -1 on error
+#[no_mangle]
+pub unsafe extern "C" fn ige_solve_mic(
+    coords: *const c_double,
+    coords_len: size_t,
+    options: *const IgeMicOptions,
+    result: *mut IgeMicResult,
+) -> c_int {
+    if coords.is_null() || result.is_null() {
+        return -1;
+    }
+    if coords_len < 6 || !coords_len.is_multiple_of(2) {
+        return -1;
+    }
+
+    let coord_slice = slice::from_raw_parts(coords, coords_len);
+    let mut geo_coords = Vec::with_capacity(coords_len / 2);
+    for i in (0..coords_len).step_by(2) {
+        geo_coords.push(Coord {
+            x: coord_slice[i],
+            y: coord_slice[i + 1],
+        });
+    }
+
+    let exterior = LineString::from(geo_coords);
+    let polygon = Polygon::new(exterior, vec![]);
+
+    let raw_opts = if options.is_null() {
+        IgeMicOptions::default()
+    } else {
+        unsafe { *options }
+    };
+    let mic_opts = MicOptions {
+        engine: mic_engine_from_raw(raw_opts.engine),
+        robust_mode: robust_mode_from_raw(raw_opts.robust_mode),
+    };
+
+    match maximum_inscribed_circle(&polygon, &mic_opts) {
+        Ok(mic) => {
+            *result = IgeMicResult {
+                center_x: mic.center.x(),
+                center_y: mic.center.y(),
+                radius: mic.radius,
+                radius_sq: mic.radius_sq,
+                used_engine: used_engine_to_raw(mic.used_engine),
+                candidate_count: mic.candidate_count as size_t,
+                component_index: mic.component_index.map(|x| x as c_int).unwrap_or(-1),
+            };
+            0
+        }
+        Err(_) => -1,
+    }
 }
 
 /// Solve for largest oriented inscribed rectangle (C API)
@@ -313,5 +434,37 @@ mod tests {
 
         assert_eq!(status, 0);
         assert!((rect.x_max - rect.x_min) * (rect.y_max - rect.y_min) > 0.0);
+    }
+
+    #[test]
+    fn test_c_api_mic_square() {
+        let coords = [0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0, 0.0, 0.0];
+        let mut result = IgeMicResult {
+            center_x: 0.0,
+            center_y: 0.0,
+            radius: 0.0,
+            radius_sq: 0.0,
+            used_engine: -1,
+            candidate_count: 0,
+            component_index: -1,
+        };
+
+        let mut opts = unsafe { ige_mic_options_default() };
+        opts.engine = 0; // ExactOnly
+        opts.robust_mode = 1; // Filtered
+
+        let status = unsafe {
+            ige_solve_mic(
+                coords.as_ptr(),
+                coords.len(),
+                &opts as *const _,
+                &mut result as *mut _,
+            )
+        };
+
+        assert_eq!(status, 0);
+        assert!((result.center_x - 5.0).abs() < 1e-7);
+        assert!((result.center_y - 5.0).abs() < 1e-7);
+        assert!((result.radius - 5.0).abs() < 1e-7);
     }
 }

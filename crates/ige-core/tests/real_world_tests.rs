@@ -71,7 +71,7 @@ fn test_real_world_all_polygons() {
     let mut passed = 0;
     let total = 10;
 
-    for (id, poly) in polygons.iter().take(total) {
+    for (_id, poly) in polygons.iter().take(total) {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve_oriented_lir(poly)));
         match result {
             Ok(Some(rect)) => {

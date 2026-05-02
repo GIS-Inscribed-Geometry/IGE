@@ -4,7 +4,7 @@
 //! For rectangles and simple convex shapes (<=8 vertices, no holes),
 //! the optimal inscribed rectangle is edge-aligned, skipping the full BCRS pipeline.
 
-use geo::{Area, BoundingRect, Centroid, ConvexHull};
+use geo::{Area, Centroid, ConvexHull};
 use geo_types::{Coord, Point, Polygon};
 
 use crate::bcrs::expand::expand_rect_to_boundary;
