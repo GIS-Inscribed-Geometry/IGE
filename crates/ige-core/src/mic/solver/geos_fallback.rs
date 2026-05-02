@@ -7,6 +7,7 @@ use crate::mic::{MicError, MicOptions, MicResult, MicUsedEngine, RobustMode};
 pub fn solve_with_geos(
     host: &HostPolygon,
     opts: &MicOptions,
+    existing_seg_index: Option<&SegmentIndex>,
 ) -> std::result::Result<MicResult, MicError> {
     let poly_wkt = host_polygon_to_wkt(host);
     let geom = Geometry::new_from_wkt(&poly_wkt)
@@ -21,7 +22,10 @@ pub fn solve_with_geos(
         .map_err(|err| MicError::GeosFailed(format!("failed to decode GEOS MIC output: {err}")))?;
 
     let (center, boundary_hint) = parse_geos_output(&out_wkt)?;
-    let seg_index = SegmentIndex::from_host(host);
+    let seg_index = match existing_seg_index {
+        Some(idx) => idx.clone(),
+        None => SegmentIndex::from_host(host),
+    };
     let nb_index = NearestBoundaryIndex::new(seg_index);
     let Some((nearest_sq, _)) = nb_index.nearest_distance_sq(center.0, center.1) else {
         return Err(MicError::NoCircleFound);

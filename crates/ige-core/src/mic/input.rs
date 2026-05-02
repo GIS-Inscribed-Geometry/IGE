@@ -122,6 +122,7 @@ pub struct SegmentIndex {
     pub by: Vec<f64>,
     pub ring_id: Vec<usize>,
     pub edge_id: Vec<usize>,
+    pub is_hole_edge: Vec<bool>,
     pub bbox_minx: Vec<f64>,
     pub bbox_maxx: Vec<f64>,
     pub bbox_miny: Vec<f64>,
@@ -140,6 +141,7 @@ impl SegmentIndex {
             by: Vec::new(),
             ring_id: Vec::new(),
             edge_id: Vec::new(),
+            is_hole_edge: Vec::new(),
             bbox_minx: Vec::new(),
             bbox_maxx: Vec::new(),
             bbox_miny: Vec::new(),
@@ -149,7 +151,7 @@ impl SegmentIndex {
             len_sq: Vec::new(),
         };
 
-        for (rid, _meta) in host.rings.iter().enumerate() {
+        for (rid, meta) in host.rings.iter().enumerate() {
             let ring = host.ring_coords(rid);
             if ring.len() < 2 {
                 continue;
@@ -170,6 +172,7 @@ impl SegmentIndex {
                 index.by.push(b[1]);
                 index.ring_id.push(rid);
                 index.edge_id.push(eid);
+                index.is_hole_edge.push(meta.is_hole);
                 index.bbox_minx.push(a[0].min(b[0]));
                 index.bbox_maxx.push(a[0].max(b[0]));
                 index.bbox_miny.push(a[1].min(b[1]));

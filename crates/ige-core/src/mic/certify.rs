@@ -14,7 +14,7 @@ pub(crate) fn certify_candidate(
 
     match nb_index.nearest_distance_sq(x, y) {
         Some((nearest_sq, _)) => {
-            let tol = nearest_sq.abs().max(1.0) * 1e-10;
+            let tol = nearest_sq.abs() * 1e-9 + 1e-20;
             nearest_sq + tol >= radius_sq
         }
         None => false,

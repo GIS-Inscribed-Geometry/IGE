@@ -7,7 +7,6 @@ pub(crate) struct MicCandidate {
     pub x: f64,
     pub y: f64,
     pub radius_sq: f64,
-    pub support_segments: Vec<usize>,
 }
 
 /// Reusable solver workspace for MIC computation.

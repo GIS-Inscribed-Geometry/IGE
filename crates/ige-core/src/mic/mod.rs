@@ -94,6 +94,17 @@ pub fn maximum_inscribed_circle(
     solve_on_host_polygon(&host, opts)
 }
 
+/// Solve MIC with a reusable workspace (avoids rebuilding indexes per call).
+///
+/// The workspace is rebuilt only if `host` changes; for repeated calls on
+/// different polygons, create a fresh [`MicWorkspace`] each time.
+pub fn maximum_inscribed_circle_with_workspace(
+    workspace: &mut MicWorkspace,
+    opts: &MicOptions,
+) -> std::result::Result<MicResult, MicError> {
+    solve_exact(workspace, opts).map_err(|err| MicError::ExactFailed(err.to_string()))
+}
+
 /// Solve MIC on a multipolygon by solving each component and keeping the best.
 pub fn maximum_inscribed_circle_multipolygon(
     multi: &MultiPolygon<f64>,
@@ -131,26 +142,36 @@ fn solve_on_host_polygon(
     host: &HostPolygon,
     opts: &MicOptions,
 ) -> std::result::Result<MicResult, MicError> {
-    let exact_result = run_exact(host, opts);
-
     match opts.engine {
-        MicEngine::ExactOnly => exact_result,
-        MicEngine::FallbackOnly => run_geos(host, opts),
-        MicEngine::ExactThenGeos => match exact_result {
-            Ok(result) => Ok(result),
-            Err(exact_err) => {
-                #[cfg(feature = "geos")]
-                {
-                    run_geos(host, opts).map_err(|fallback_err| {
-                        MicError::GeosFailed(format!("exact failed ({exact_err}); fallback failed ({fallback_err})"))
-                    })
+        MicEngine::ExactOnly => run_exact(host, opts),
+        MicEngine::FallbackOnly => run_geos(host, None, opts),
+        MicEngine::ExactThenGeos => {
+            let mut workspace = match MicWorkspace::new(host.clone()) {
+                Ok(w) => w,
+                Err(e) => {
+                    #[cfg(feature = "geos")]
+                    { return run_geos(host, None, opts).map_err(|fe| MicError::GeosFailed(format!("workspace failed ({e}); fallback failed ({fe})"))); }
+                    #[cfg(not(feature = "geos"))]
+                    { return Err(e); }
                 }
-                #[cfg(not(feature = "geos"))]
-                {
-                    Err(exact_err)
+            };
+            let seg_index = workspace.seg_index.clone();
+            match solve_exact(&mut workspace, opts) {
+                Ok(result) => Ok(result),
+                Err(exact_err) => {
+                    #[cfg(feature = "geos")]
+                    {
+                        run_geos(host, Some(&seg_index), opts).map_err(|fallback_err| {
+                            MicError::GeosFailed(format!("exact failed ({exact_err}); fallback failed ({fallback_err})"))
+                        })
+                    }
+                    #[cfg(not(feature = "geos"))]
+                    {
+                        Err(MicError::ExactFailed(exact_err.to_string()))
+                    }
                 }
             }
-        },
+        }
     }
 }
 
@@ -164,15 +185,16 @@ fn run_exact(
 
 fn run_geos(
     host: &HostPolygon,
+    existing_seg_index: Option<&crate::mic::input::SegmentIndex>,
     opts: &MicOptions,
 ) -> std::result::Result<MicResult, MicError> {
     #[cfg(feature = "geos")]
     {
-        self::solver::geos_fallback::solve_with_geos(host, opts)
+        self::solver::geos_fallback::solve_with_geos(host, opts, existing_seg_index)
     }
     #[cfg(not(feature = "geos"))]
     {
-        let _ = (host, opts);
+        let _ = (host, existing_seg_index, opts);
         Err(MicError::GeosFeatureDisabled)
     }
 }

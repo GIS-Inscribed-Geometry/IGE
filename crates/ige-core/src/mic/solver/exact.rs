@@ -11,26 +11,42 @@ const CANDIDATE_QUANTIZE: f64 = 1e9;
 const MAX_TRIPLE_VERTICES: usize = 48;
 const MAX_SEG_TRIPLES: usize = 50;
 
+fn quantize_origin(host: &crate::mic::input::HostPolygon) -> (f64, f64) {
+    let Some((min_x, min_y, max_x, _max_y)) = host.bounds() else {
+        return (0.0, 0.0);
+    };
+    let span_x = (max_x - min_x).max(1.0);
+    (min_x - span_x * 0.1, min_y - span_x * 0.1)
+}
+
 pub fn solve_exact(
     workspace: &mut MicWorkspace,
     opts: &MicOptions,
 ) -> std::result::Result<MicResult, MicError> {
     workspace.clear_candidates();
     let mut seen = FxHashSet::<(i64, i64)>::default();
+    let q_origin = quantize_origin(&workspace.host);
 
     if let Some(c) = workspace.host.polygon.centroid() {
-        insert_candidate(workspace, &mut seen, c.x(), c.y());
+        insert_candidate(workspace, &mut seen, c.x(), c.y(), q_origin);
     }
 
     let vertices = workspace.host.unique_vertices();
     for v in &vertices {
-        insert_candidate(workspace, &mut seen, v[0], v[1]);
+        insert_candidate(workspace, &mut seen, v[0], v[1], q_origin);
     }
 
     for seg_idx in 0..workspace.seg_index.len() {
         let (mx, my) = workspace.seg_index.midpoint(seg_idx);
-        insert_candidate(workspace, &mut seen, mx, my);
+        insert_candidate(workspace, &mut seen, mx, my, q_origin);
     }
+
+    let seg_ref = &workspace.seg_index;
+    let cand_buf = &mut workspace.candidate_buf;
+    generate_segment_triple_candidates(seg_ref, &mut seen, cand_buf, q_origin);
+
+    let vertices_ref = workspace.host.unique_vertices();
+    generate_seg_seg_vertex_candidates(seg_ref, &vertices_ref, &mut seen, cand_buf, q_origin);
 
     if matches!(opts.robust_mode, RobustMode::Filtered) {
         let sampled = sample_vertices(&vertices, MAX_TRIPLE_VERTICES);
@@ -38,18 +54,11 @@ pub fn solve_exact(
             for j in i + 1..sampled.len() {
                 for k in j + 1..sampled.len() {
                     if let Some((cx, cy)) = circumcenter(sampled[i], sampled[j], sampled[k]) {
-                        insert_candidate(workspace, &mut seen, cx, cy);
+                        insert_candidate(workspace, &mut seen, cx, cy, q_origin);
                     }
                 }
             }
         }
-
-        let seg_ref = &workspace.seg_index;
-        let cand_buf = &mut workspace.candidate_buf;
-        generate_segment_triple_candidates(seg_ref, &mut seen, cand_buf);
-
-        let vertices_ref = workspace.host.unique_vertices();
-        generate_seg_seg_vertex_candidates(seg_ref, &vertices_ref, &mut seen, cand_buf);
     }
 
     if workspace.candidate_buf.is_empty() {
@@ -76,9 +85,6 @@ pub fn solve_exact(
         }
 
         cand.radius_sq = radius_sq;
-        let support_eps = radius_sq.max(1.0) * 1e-10;
-        cand.support_segments =
-            nb_index.supporting_segments(cand.x, cand.y, radius_sq, support_eps);
 
         if !certify_candidate(pip_index, nb_index, cand.x, cand.y, cand.radius_sq) {
             continue;
@@ -95,12 +101,15 @@ pub fn solve_exact(
 
     let best = best_any.ok_or(MicError::NoCircleFound)?;
     let center = Point::new(best.x, best.y);
+    let support_eps = best.radius_sq.max(1.0) * 1e-10;
+    let support_segments =
+        nb_index.supporting_segments(best.x, best.y, best.radius_sq, support_eps);
 
     Ok(MicResult {
         center,
         radius: best.radius_sq.sqrt(),
         radius_sq: best.radius_sq,
-        support_segments: best.support_segments,
+        support_segments,
         candidate_count,
         used_engine: MicUsedEngine::Exact,
         component_index: None,
@@ -112,8 +121,9 @@ fn insert_candidate(
     seen: &mut FxHashSet<(i64, i64)>,
     x: f64,
     y: f64,
+    q_origin: (f64, f64),
 ) {
-    push_candidate(&mut workspace.candidate_buf, seen, x, y);
+    push_candidate(&mut workspace.candidate_buf, seen, x, y, q_origin);
 }
 
 fn push_candidate(
@@ -121,21 +131,17 @@ fn push_candidate(
     seen: &mut FxHashSet<(i64, i64)>,
     x: f64,
     y: f64,
+    q_origin: (f64, f64),
 ) {
     if !x.is_finite() || !y.is_finite() {
         return;
     }
-    let qx = quantize(x);
-    let qy = quantize(y);
+    let qx = quantize(x - q_origin.0);
+    let qy = quantize(y - q_origin.1);
     if !seen.insert((qx, qy)) {
         return;
     }
-    buf.push(MicCandidate {
-        x,
-        y,
-        radius_sq: 0.0,
-        support_segments: Vec::new(),
-    });
+    buf.push(MicCandidate { x, y, radius_sq: 0.0 });
 }
 
 fn quantize(v: f64) -> i64 {
@@ -154,6 +160,7 @@ fn generate_segment_triple_candidates(
     seg_index: &SegmentIndex,
     seen: &mut FxHashSet<(i64, i64)>,
     candidate_buf: &mut Vec<MicCandidate>,
+    q_origin: (f64, f64),
 ) {
     let n = seg_index.len();
     if n < 3 {
@@ -176,7 +183,7 @@ fn generate_segment_triple_candidates(
             for kk in jj + 1..sampled_indices.len() {
                 let k = sampled_indices[kk];
                 if let Some((cx, cy)) = segment_incenter(&lines, i, j, k) {
-                    push_candidate(candidate_buf, seen, cx, cy);
+                    push_candidate(candidate_buf, seen, cx, cy, q_origin);
                 }
             }
         }
@@ -188,6 +195,7 @@ fn generate_seg_seg_vertex_candidates(
     vertices: &[[f64; 2]],
     seen: &mut FxHashSet<(i64, i64)>,
     candidate_buf: &mut Vec<MicCandidate>,
+    q_origin: (f64, f64),
 ) {
     if seg_index.len() < 2 || vertices.len() < 1 {
         return;
@@ -263,7 +271,7 @@ fn generate_seg_seg_vertex_candidates(
                     if d_i <= 0.0 {
                         continue;
                     }
-                    push_candidate(candidate_buf, seen, cx, cy);
+                    push_candidate(candidate_buf, seen, cx, cy, q_origin);
                 }
             }
         }
@@ -283,9 +291,9 @@ fn precompute_segment_lines(seg_index: &SegmentIndex) -> Vec<SegmentLine> {
         let dy = seg_index.dir_y[idx];
         let len = seg_index.len_sq[idx].sqrt();
         let inv_len = 1.0 / len;
-        let ring_id = seg_index.ring_id[idx];
+        let is_hole = seg_index.is_hole_edge[idx];
 
-        let (nx, ny) = if ring_id == 0 {
+        let (nx, ny) = if !is_hole {
             (-dy * inv_len, dx * inv_len)
         } else {
             (dy * inv_len, -dx * inv_len)
