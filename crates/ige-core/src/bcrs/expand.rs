@@ -9,8 +9,8 @@ use geo_types::{Coord, LineString, Point, Polygon};
 
 use crate::axis_aligned::sdf::polygon_sdf;
 
-const BINARY_STEPS: usize = 24;
-const EXPAND_ITERS: usize = 3;
+const BINARY_STEPS: usize = crate::tuning::EXPAND_BINARY_STEPS;
+const EXPAND_ITERS: usize = crate::tuning::EXPAND_ITERS;
 
 /// Proper geometric containment check: verifies all 4 corners are inside AND
 /// no rect edge intersects the polygon boundary. Equivalent to Shapely's
@@ -92,7 +92,7 @@ fn segments_intersect(
         return true;
     }
 
-    // Collinear boundary cases — consider as non-intersecting for containment
+    // Collinear boundary cases -- consider as non-intersecting for containment
     // (the corner check already verifies endpoints are fine; collinear overlaps
     // on the boundary are acceptable for `covers`)
     false
@@ -171,98 +171,101 @@ pub fn expand_rect_to_boundary(
         y1 = cy_c + hh * lo;
     }
 
+    // Pre-compute centre once per iteration
+    let mut cx_c = (x0 + x1) * 0.5;
+    let mut cy_c = (y0 + y1) * 0.5;
+
     for _ in 0..EXPAND_ITERS {
-        // Left
-        if x0 > minx {
-            let sdf = polygon_sdf(rot_poly, x0, (y0 + y1) * 0.5);
-            let hi_d = if sdf < 0.0 {
-                (x0 - minx).min(sdf.abs())
-            } else {
-                x0 - minx
-            };
-            if hi_d > 1e-12 {
-                let mut lo_d = 0.0_f64;
-                let mut hi_d = hi_d;
-                for _ in 0..BINARY_STEPS {
-                    let mid = (lo_d + hi_d) * 0.5;
-                    if rect_covers(rot_poly, x0 - mid, y0, x1, y1) {
-                        lo_d = mid;
-                    } else {
-                        hi_d = mid;
+        let mut any_changed = false;
+
+        // Sort sides by gap size (largest first) for faster convergence
+        let gap_left = if x0 > minx { x0 - minx } else { 0.0 };
+        let gap_right = if x1 < maxx { maxx - x1 } else { 0.0 };
+        let gap_bottom = if y0 > miny { y0 - miny } else { 0.0 };
+        let gap_top = if y1 < maxy { maxy - y1 } else { 0.0 };
+
+        let mut expansions: [(usize, f64); 4] = [
+            (0, gap_left), (1, gap_right), (2, gap_bottom), (3, gap_top),
+        ];
+        expansions.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        for &(side, _) in &expansions {
+            match side {
+                0 if x0 > minx => { // Left
+                    let sdf = polygon_sdf(rot_poly, x0, cy_c);
+                    let hi_d = if sdf < 0.0 { gap_left.min(sdf.abs()) } else { gap_left };
+                    if hi_d > 1e-12 {
+                        let mut lo_d = 0.0_f64;
+                        let mut hi_d = hi_d;
+                        for _ in 0..BINARY_STEPS {
+                            let mid = (lo_d + hi_d) * 0.5;
+                            if rect_covers(rot_poly, x0 - mid, y0, x1, y1) {
+                                lo_d = mid;
+                            } else {
+                                hi_d = mid;
+                            }
+                        }
+                        if lo_d > 1e-10 { x0 -= lo_d; any_changed = true; }
                     }
                 }
-                x0 -= lo_d;
+                1 if x1 < maxx => { // Right
+                    let sdf = polygon_sdf(rot_poly, x1, cy_c);
+                    let hi_d = if sdf < 0.0 { gap_right.min(sdf.abs()) } else { gap_right };
+                    if hi_d > 1e-12 {
+                        let mut lo_d = 0.0_f64;
+                        let mut hi_d = hi_d;
+                        for _ in 0..BINARY_STEPS {
+                            let mid = (lo_d + hi_d) * 0.5;
+                            if rect_covers(rot_poly, x0, y0, x1 + mid, y1) {
+                                lo_d = mid;
+                            } else {
+                                hi_d = mid;
+                            }
+                        }
+                        if lo_d > 1e-10 { x1 += lo_d; any_changed = true; }
+                    }
+                }
+                2 if y0 > miny => { // Bottom
+                    let sdf = polygon_sdf(rot_poly, cx_c, y0);
+                    let hi_d = if sdf < 0.0 { gap_bottom.min(sdf.abs()) } else { gap_bottom };
+                    if hi_d > 1e-12 {
+                        let mut lo_d = 0.0_f64;
+                        let mut hi_d = hi_d;
+                        for _ in 0..BINARY_STEPS {
+                            let mid = (lo_d + hi_d) * 0.5;
+                            if rect_covers(rot_poly, x0, y0 - mid, x1, y1) {
+                                lo_d = mid;
+                            } else {
+                                hi_d = mid;
+                            }
+                        }
+                        if lo_d > 1e-10 { y0 -= lo_d; any_changed = true; }
+                    }
+                }
+                3 if y1 < maxy => { // Top
+                    let sdf = polygon_sdf(rot_poly, cx_c, y1);
+                    let hi_d = if sdf < 0.0 { gap_top.min(sdf.abs()) } else { gap_top };
+                    if hi_d > 1e-12 {
+                        let mut lo_d = 0.0_f64;
+                        let mut hi_d = hi_d;
+                        for _ in 0..BINARY_STEPS {
+                            let mid = (lo_d + hi_d) * 0.5;
+                            if rect_covers(rot_poly, x0, y0, x1, y1 + mid) {
+                                lo_d = mid;
+                            } else {
+                                hi_d = mid;
+                            }
+                        }
+                        if lo_d > 1e-10 { y1 += lo_d; any_changed = true; }
+                    }
+                }
+                _ => {}
             }
+            cx_c = (x0 + x1) * 0.5;
+            cy_c = (y0 + y1) * 0.5;
         }
 
-        // Right
-        if x1 < maxx {
-            let sdf = polygon_sdf(rot_poly, x1, (y0 + y1) * 0.5);
-            let hi_d = if sdf < 0.0 {
-                (maxx - x1).min(sdf.abs())
-            } else {
-                maxx - x1
-            };
-            if hi_d > 1e-12 {
-                let mut lo_d = 0.0_f64;
-                let mut hi_d = hi_d;
-                for _ in 0..BINARY_STEPS {
-                    let mid = (lo_d + hi_d) * 0.5;
-                    if rect_covers(rot_poly, x0, y0, x1 + mid, y1) {
-                        lo_d = mid;
-                    } else {
-                        hi_d = mid;
-                    }
-                }
-                x1 += lo_d;
-            }
-        }
-
-        // Bottom
-        if y0 > miny {
-            let sdf = polygon_sdf(rot_poly, (x0 + x1) * 0.5, y0);
-            let hi_d = if sdf < 0.0 {
-                (y0 - miny).min(sdf.abs())
-            } else {
-                y0 - miny
-            };
-            if hi_d > 1e-12 {
-                let mut lo_d = 0.0_f64;
-                let mut hi_d = hi_d;
-                for _ in 0..BINARY_STEPS {
-                    let mid = (lo_d + hi_d) * 0.5;
-                    if rect_covers(rot_poly, x0, y0 - mid, x1, y1) {
-                        lo_d = mid;
-                    } else {
-                        hi_d = mid;
-                    }
-                }
-                y0 -= lo_d;
-            }
-        }
-
-        // Top
-        if y1 < maxy {
-            let sdf = polygon_sdf(rot_poly, (x0 + x1) * 0.5, y1);
-            let hi_d = if sdf < 0.0 {
-                (maxy - y1).min(sdf.abs())
-            } else {
-                maxy - y1
-            };
-            if hi_d > 1e-12 {
-                let mut lo_d = 0.0_f64;
-                let mut hi_d = hi_d;
-                for _ in 0..BINARY_STEPS {
-                    let mid = (lo_d + hi_d) * 0.5;
-                    if rect_covers(rot_poly, x0, y0, x1, y1 + mid) {
-                        lo_d = mid;
-                    } else {
-                        hi_d = mid;
-                    }
-                }
-                y1 += lo_d;
-            }
-        }
+        if !any_changed { break; }
     }
 
     (x0, y0, x1, y1) = clamp_aspect_ratio(x0, y0, x1, y1, max_ratio);

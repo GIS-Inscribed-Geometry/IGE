@@ -25,6 +25,7 @@ pub struct IgeOptions {
     pub prefer_gpu: c_int,
     pub force_cpu: c_int,
     pub max_aspect_ratio: c_double,
+    pub use_parallel_field: c_int,
 }
 
 impl Default for IgeOptions {
@@ -34,6 +35,7 @@ impl Default for IgeOptions {
             prefer_gpu: 1,
             force_cpu: 0,
             max_aspect_ratio: 0.0,
+            use_parallel_field: 0,
         }
     }
 }

@@ -10,7 +10,7 @@
 use geo::Area;
 use geo_types::{Coord, LineString, Polygon};
 use ige_core::bcrs::{solve_bcrs, BcrsOptions};
-use ige_core::solve_oriented_lir;
+use ige_core::{solve_axis_aligned, AxisAlignedOptions};
 use rayon::prelude::*;
 use serde_json::Value;
 use std::fs;
@@ -224,7 +224,9 @@ fn gen_svg_card(
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let use_parallel = args.contains(&"--parallel".to_string());
     let use_bcrs = !args.contains(&"--baseline".to_string());
+    let use_json = args.contains(&"--json".to_string());
     let limit = args.iter()
         .position(|a| a == "--limit")
         .and_then(|i| args.get(i + 1))
@@ -234,7 +236,7 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str());
 
-    let algo_name = if use_bcrs { "BCRS" } else { "Baseline (vertex grid)" };
+    let algo_name = if use_parallel { "BCRS parallel" } else if use_bcrs { "BCRS" } else { "axis-aligned" };
 
     let real = load_polygons_from(file_path);
     eprintln!("Loaded {} polygons from geojson", real.len());
@@ -287,13 +289,21 @@ fn main() {
         .map(|(idx, (id, poly))| {
             let start = std::time::Instant::now();
 
-            let (rp, ra, ang, be) = if use_bcrs {
+            let (rp, ra, ang, be) = if use_parallel {
+                let mut opts = BcrsOptions::default();
+                opts.use_parallel_field = true;
+                match solve_bcrs(poly, &opts) {
+                    Ok(r) => (r.rect_polygon, r.area, r.angle_deg, r.best_effort),
+                    Err(_) => (None, 0.0, 0.0, false),
+                }
+            } else if use_bcrs {
                 match solve_bcrs(poly, &BcrsOptions::default()) {
                     Ok(r) => (r.rect_polygon, r.area, r.angle_deg, r.best_effort),
                     Err(_) => (None, 0.0, 0.0, false),
                 }
             } else {
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve_oriented_lir(poly))) {
+                let opts = AxisAlignedOptions::default();
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve_axis_aligned(poly, &opts))) {
                     Ok(Some(rect)) => {
                         let rp = Polygon::new(LineString::from(vec![
                             Coord { x: rect.x_min, y: rect.y_min },
@@ -374,7 +384,18 @@ svg{{width:100%;height:200px;background:#0f0f23;border-radius:4px}}
         cards = cards,
     );
 
-    let path = out_dir.join("index.html");
-    fs::write(&path, &html).unwrap();
-    println!("Generated: {}  ({algo_name})", path.display());
+    if use_json {
+        let json = serde_json::json!({
+            "success": success,
+            "total": all_polygons.len(),
+            "fill_rate": fill / 100.0,
+            "avg_ms": avg,
+            "wall_ms": wall_total_ms,
+        });
+        println!("{}", serde_json::to_string(&json).unwrap());
+    } else {
+        let path = out_dir.join("index.html");
+        fs::write(&path, &html).unwrap();
+        println!("Generated: {}  ({algo_name})", path.display());
+    }
 }

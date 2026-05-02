@@ -43,9 +43,9 @@ fn ring_intersects_rect(ring: &LineString<f64>, x0: f64, y0: f64, x1: f64, y1: f
 
 /// Check that an axis-aligned rect is fully inside `poly`.
 ///
-/// Stage 1 — corners: all 4 corners must be inside (boundary accepted).
-/// Stage 2 — edge crossings: no rect edge may cross a polygon edge.
-/// Stage 3 — vertex containment: no polygon vertex may lie strictly inside
+/// Stage 1 -- corners: all 4 corners must be inside (boundary accepted).
+/// Stage 2 -- edge crossings: no rect edge may cross a polygon edge.
+/// Stage 3 -- vertex containment: no polygon vertex may lie strictly inside
 ///           the rect (catches concave notches where boundary edges coincide
 ///           with rect edges).
 pub fn rect_fully_contained(
@@ -59,8 +59,8 @@ pub fn rect_fully_contained(
         return false;
     }
 
-    // Stage 1: corners — accept boundary points (distance ≤ ε)
-    const ON_BOUNDARY: f64 = 1e-9;
+    // Stage 1: corners -- accept boundary points (distance <= ε)
+    const ON_BOUNDARY: f64 = crate::tuning::CONTAIN_BOUNDARY_EPS;
     let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
     if !corners.iter().all(|&(cx, cy)| {
         let pt = Point::new(cx, cy);
@@ -145,8 +145,8 @@ pub fn contract_rect_to_boundary(
     x1 = cx + hw * lo;
     y1 = cy + hh * lo;
 
-    // Per-side binary expansion — push each side outward until just before it would exit
-    const ITER: usize = 32;
+    // Per-side binary expansion -- push each side outward until just before it would exit
+    const ITER: usize = crate::tuning::CONTRACT_BINARY_ITERS;
     let bb = poly.bounding_rect()?;
     let minx = bb.min().x;
     let miny = bb.min().y;

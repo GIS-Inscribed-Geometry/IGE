@@ -8,11 +8,11 @@
 /// and the top of row `row_idx` is `ys[row_idx + 1]`.
 ///
 /// # Arguments
-/// * `heights`   — column heights in row-cell units (length = n_cols)
-/// * `xs`        — column boundary x-coordinates (length = n_cols + 1)
-/// * `ys`        — row boundary y-coordinates (length = n_rows + 1)
-/// * `row_idx`   — current row index (0-based)
-/// * `max_ratio` — max aspect ratio (longer/shorter ≤ max_ratio); 0.0 = unconstrained
+/// * `heights`   -- column heights in row-cell units (length = n_cols)
+/// * `xs`        -- column boundary x-coordinates (length = n_cols + 1)
+/// * `ys`        -- row boundary y-coordinates (length = n_rows + 1)
+/// * `row_idx`   -- current row index (0-based)
+/// * `max_ratio` -- max aspect ratio (longer/shorter <= max_ratio); 0.0 = unconstrained
 ///
 /// Returns `(x0, y0, x1, y1, area)`.
 pub fn lrih_vp(
@@ -95,11 +95,11 @@ pub fn lrih_vp(
 /// entries (grid points, not cell boundaries). The top of row `row_idx` is `ys[row_idx]`.
 ///
 /// # Arguments
-/// * `heights`   — column heights in row-cell units (length = n_cols)
-/// * `xs`        — grid-point x-coordinates (length = n_cols)
-/// * `ys`        — grid-point y-coordinates (length = n_rows)
-/// * `row_idx`   — current row index (0-based)
-/// * `max_ratio` — max aspect ratio (longer/shorter ≤ max_ratio); 0.0 = unconstrained
+/// * `heights`   -- column heights in row-cell units (length = n_cols)
+/// * `xs`        -- grid-point x-coordinates (length = n_cols)
+/// * `ys`        -- grid-point y-coordinates (length = n_rows)
+/// * `row_idx`   -- current row index (0-based)
+/// * `max_ratio` -- max aspect ratio (longer/shorter <= max_ratio); 0.0 = unconstrained
 ///
 /// Returns `(x0, y0, x1, y1, area)`.
 pub fn lrih(

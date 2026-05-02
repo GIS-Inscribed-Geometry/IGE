@@ -1,7 +1,7 @@
 //! Fast-path solver for simple convex polygons.
 //!
 //! Port of `_maybe_fast_path` from `bcrs_fast_worker.py`.
-//! For rectangles and simple convex shapes (≤8 vertices, no holes),
+//! For rectangles and simple convex shapes (<=8 vertices, no holes),
 //! the optimal inscribed rectangle is edge-aligned, skipping the full BCRS pipeline.
 
 use geo::{Area, BoundingRect, Centroid, ConvexHull};
@@ -17,7 +17,7 @@ pub fn maybe_fast_path(poly: &Polygon<f64>, max_ratio: f64) -> Option<(Polygon<f
     let nv = if coords.len() > 1 { coords.len() - 1 } else { 0 };
     let has_holes = !poly.interiors().is_empty();
 
-    // Rectangle (identity) — 4 vertices, no holes
+    // Rectangle (identity) -- 4 vertices, no holes
     if nv == 4 && !has_holes {
         for i in 0..4 {
             let p0 = coords[i];
@@ -64,7 +64,7 @@ pub fn maybe_fast_path(poly: &Polygon<f64>, max_ratio: f64) -> Option<(Polygon<f
         }
     }
 
-    // Simple convex: ≤8 vertices, no holes, near-convex
+    // Simple convex: <=8 vertices, no holes, near-convex
     if has_holes || nv < 3 || nv > 8 {
         return None;
     }
@@ -126,7 +126,7 @@ pub fn maybe_fast_path(poly: &Polygon<f64>, max_ratio: f64) -> Option<(Polygon<f
         );
 
         // Certify the actual oriented rect (not its AABB)
-        if let Some((cert_poly, cert_area)) = super::certify_and_adjust(poly, &world_rect, max_ratio) {
+        if let Some((cert_poly, cert_area)) = super::certify_and_adjust(poly, &world_rect, max_ratio, crate::tuning::CERT_EPS, crate::tuning::CERT_MAX_SHRINK) {
             if cert_area > 0.0 {
                 let corners: Vec<_> = cert_poly.exterior().0.iter().collect();
                 let w = ((corners[1].x - corners[0].x).powi(2) + (corners[1].y - corners[0].y).powi(2)).sqrt();

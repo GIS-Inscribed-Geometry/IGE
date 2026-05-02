@@ -5,8 +5,8 @@
 //!
 //! Procedure:
 //! 1. Sort unique vertex x/y coordinates, augment with midpoints.
-//! 2. Scanline even-odd test per row (O(v²)) — fast cell-centre classification.
-//! 3. Largest-rectangle-in-histogram sweep (O(v²)).
+//! 2. Scanline even-odd test per row (O(v^2)) -- fast cell-centre classification.
+//! 3. Largest-rectangle-in-histogram sweep (O(v^2)).
 //! 4. Post-verification: if the candidate overflows (concave boundary cells),
 //!    a per-side binary contraction guarantees containment while maximising area.
 
@@ -201,7 +201,7 @@ pub fn solve_vertex_grid(poly: &Polygon<f64>, options: &AxisAlignedOptions) -> O
     // Adaptive sub-division: more levels for low vertex-count polygons to ensure
     // sufficient grid resolution for the LRIH to find the optimal rectangle.
     let n_unique = xs.len().min(ys.len());
-    let levels = if n_unique <= 4 { 3 } else if n_unique <= 12 { 2 } else { 1 };
+    let levels = if n_unique <= 4 { crate::tuning::AA_SUBDIV_LEVELS_HIGH } else if n_unique <= crate::tuning::AA_SMALL_VERTEX_CUTOFF { crate::tuning::AA_SUBDIV_LEVELS_MED } else { crate::tuning::AA_SUBDIV_LEVELS_LOW };
 
     xs = subdivide_coords(&xs, levels);
     ys = subdivide_coords(&ys, levels);
@@ -212,10 +212,10 @@ pub fn solve_vertex_grid(poly: &Polygon<f64>, options: &AxisAlignedOptions) -> O
         return None;
     }
 
-    // Stage 1 — cell classification
+    // Stage 1 -- cell classification
     let mut mask = vec![vec![false; n_cols]; n_rows];
 
-    if n_unique <= 12 {
+    if n_unique <= crate::tuning::AA_SMALL_VERTEX_CUTOFF {
         // Low vertex count: use exact Point-in-Polygon for every cell centre.
         // Guarantees correct classification for simple shapes (triangles, narrow
         // polygons) where the even-odd scanline can misclassify near boundaries.
@@ -227,7 +227,7 @@ pub fn solve_vertex_grid(poly: &Polygon<f64>, options: &AxisAlignedOptions) -> O
             }
         }
     } else {
-        // High vertex count: scanline even-odd per row (O(v²)).
+        // High vertex count: scanline even-odd per row (O(v^2)).
         let row_intervals = compute_row_intervals(poly, &xs, &ys);
         for row in 0..n_rows {
             for (col_start, col_end) in &row_intervals[row] {
@@ -238,7 +238,7 @@ pub fn solve_vertex_grid(poly: &Polygon<f64>, options: &AxisAlignedOptions) -> O
         }
     }
 
-    // Stage 2 — histogram sweep (O(v²))
+    // Stage 2 -- histogram sweep (O(v^2))
     let mut heights = vec![0; n_cols];
     let mut best_area = 0.0;
     let mut best_rect: Option<Rectangle> = None;
@@ -255,13 +255,13 @@ pub fn solve_vertex_grid(poly: &Polygon<f64>, options: &AxisAlignedOptions) -> O
         }
     }
 
-    // Stage 3 — geometric verification + per-side contraction
+    // Stage 3 -- geometric verification + per-side contraction
     let contracted = best_rect.and_then(|r| {
         contract_rect_to_boundary(poly, r.x_min, r.y_min, r.x_max, r.y_max)
             .map(|(x0, y0, x1, y1)| Rectangle { x_min: x0, y_min: y0, x_max: x1, y_max: y1 })
     });
 
-    // Stage 4 — bounding-box fallback: start from the full axis-aligned bounding
+    // Stage 4 -- bounding-box fallback: start from the full axis-aligned bounding
     // box and contract inward. This handles cases where the scanline mask produces
     // a sub-optimal candidate position (common in narrow/simple shapes).
     let bb_candidate = poly.bounding_rect().and_then(|bb| {

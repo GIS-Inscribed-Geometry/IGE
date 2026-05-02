@@ -9,7 +9,7 @@ use geo_types::{Point, Polygon};
 const CERT_EPS: f64 = 1e-7;
 const CERT_MAX_SHRINK: f64 = 0.20;
 
-// ─── Core SDF ─────────────────────────────────────────────────────────────
+// --- Core SDF -------------------------------------------------------------
 
 /// Signed distance from `(x, y)` to `poly`.
 /// - Negative: strictly inside (magnitude = distance to nearest ring)
@@ -24,11 +24,11 @@ pub fn polygon_sdf(poly: &Polygon<f64>, x: f64, y: f64) -> f64 {
         return d_poly; // outside
     }
 
-    // Inside or on boundary — measure distance to nearest ring boundary
+    // Inside or on boundary -- measure distance to nearest ring boundary
     let d_ext: f64 = poly.exterior().euclidean_distance(&pt);
 
     if poly.contains(&pt) {
-        // Strictly inside — find distance to nearest ring (exterior or hole)
+        // Strictly inside -- find distance to nearest ring (exterior or hole)
         let mut min_d = d_ext;
         for interior in poly.interiors() {
             let dh: f64 = interior.euclidean_distance(&pt);
@@ -55,7 +55,7 @@ pub fn polygon_sdf(poly: &Polygon<f64>, x: f64, y: f64) -> f64 {
     0.0
 }
 
-// ─── Rect SDF sampling ────────────────────────────────────────────────────
+// --- Rect SDF sampling ----------------------------------------------------
 
 /// Maximum SDF at 8 sample points of an axis-aligned rect (4 corners + 4 edge midpoints).
 /// Negative result means all samples are strictly inside the polygon.
@@ -77,11 +77,11 @@ pub fn rect_sdf_max(
         .fold(f64::NEG_INFINITY, f64::max)
 }
 
-// ─── Certification ────────────────────────────────────────────────────────
+// --- Certification --------------------------------------------------------
 
 /// Certify that an axis-aligned rect `(x0,y0,x1,y1)` is fully inside `poly`.
 ///
-/// If `max_sdf ≤ CERT_EPS` it is already valid and returned unchanged.
+/// If `max_sdf <= CERT_EPS` it is already valid and returned unchanged.
 /// Otherwise a symmetric shrink proportional to the violation is attempted.
 ///
 /// Returns `Some((x0, y0, x1, y1, area))` on success, `None` if unfixable.
@@ -222,7 +222,7 @@ mod tests {
         // Rect that slightly overshoots by 0.001 on the right
         let result = certify_rect(&poly, 0.0, 0.0, 10.001, 10.0, 0.0);
         // Should either succeed with a shrunk rect, or return None
-        // (CERT_MAX_SHRINK = 20% so 0.001/5 ≈ 0.02% << 20% — should succeed)
+        // (CERT_MAX_SHRINK = 20% so 0.001/5 ≈ 0.02% << 20% -- should succeed)
         assert!(result.is_some());
     }
 

@@ -11,7 +11,7 @@ use geo_types::Polygon;
 use wgpu::util::DeviceExt;
 
 /// Maximum polygon vertices supported by GPU shader.
-/// Must match `array<f32, 4096>` in WGSL — 4096 floats = 2048 (x,y) pairs.
+/// Must match `array<f32, 4096>` in WGSL -- 4096 floats = 2048 (x,y) pairs.
 const MAX_VERTICES: usize = 4096;
 
 /// Workgroup size (must match shader)
@@ -500,7 +500,7 @@ struct GridPolyHeader { vertex_offset: u32, vertex_count: u32, min_x: f32, min_y
 
 impl GpuContext {
     /// Batch-scored grid masks for many polygons in one GPU dispatch.
-    /// Returns flat `[u32]` mask: `mask[poly * grid_steps² + row * grid_steps + col]`.
+    /// Returns flat `[u32]` mask: `mask[poly * grid_steps^2 + row * grid_steps + col]`.
     pub fn evaluate_grid_batch(
         &self,
         polygons: &[&Polygon<f64>],

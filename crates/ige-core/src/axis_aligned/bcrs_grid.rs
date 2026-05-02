@@ -8,7 +8,7 @@ use geo_types::{Point, Polygon};
 
 use crate::axis_aligned::histogram::{lrih, lrih_vp};
 
-// ─── Uniform-grid solver (coarse / Brent) ─────────────────────────────────
+// --- Uniform-grid solver (coarse / Brent) ---------------------------------
 
 /// Solve the largest axis-aligned rectangle using a uniform grid of `grid_steps`
 /// points on each axis. Returns `(x0, y0, x1, y1, area)` or `None`.
@@ -67,10 +67,10 @@ pub fn solve_axis_rect_grid(
     best
 }
 
-// ─── BCRS vertex-coordinate grid solver ───────────────────────────────────
+// --- BCRS vertex-coordinate grid solver -----------------------------------
 
 /// Maximum vertex-coordinate count per axis before falling back to uniform grid.
-const BCRS_MAX_COORDS: usize = 300;
+
 
 /// Solve the largest axis-aligned rectangle using polygon vertex coordinates
 /// as grid lines (boundary-coordinate raster solve).
@@ -108,7 +108,7 @@ pub fn solve_axis_rect_bcrs(
     xs_raw.dedup_by(|a, b| (*a - *b).abs() < 1e-14);
     ys_raw.dedup_by(|a, b| (*a - *b).abs() < 1e-14);
 
-    if xs_raw.len() > BCRS_MAX_COORDS || ys_raw.len() > BCRS_MAX_COORDS {
+    if xs_raw.len() > crate::tuning::AA_GRID_MAX_COORDS || ys_raw.len() > crate::tuning::AA_GRID_MAX_COORDS {
         return None;
     }
 
@@ -200,7 +200,7 @@ fn gpu_build_mask(poly: &Polygon<f64>, points: &[(f64, f64)], mask: &mut [Vec<bo
                 return;
             }
     }
-    // GPU failed — fall back to CPU (handled at call site)
+    // GPU failed -- fall back to CPU (handled at call site)
 }
 
 // Replace uniform grid mask with GPU-accelerated version

@@ -1,4 +1,5 @@
-use ige_core::{solve_axis_aligned, solve_oriented_lir, AxisAlignedOptions, SolverOptions};
+use ige_core::bcrs::{solve_bcrs, BcrsOptions};
+use ige_core::{solve_axis_aligned, solve_oriented_lir, AxisAlignedOptions, Rectangle, SolverOptions};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use geo_types::{Polygon, LineString, Coord};
@@ -127,6 +128,65 @@ fn axis_aligned_demo() -> PyResult<String> {
     ))
 }
 
+// ─── BCRS solver (oriented, with parallel option) ─────────────────────────
+
+#[pyclass]
+#[derive(Clone)]
+pub struct PyBcrsResult {
+    #[pyo3(get)]
+    pub x_min: f64,
+    #[pyo3(get)]
+    pub y_min: f64,
+    #[pyo3(get)]
+    pub x_max: f64,
+    #[pyo3(get)]
+    pub y_max: f64,
+    #[pyo3(get)]
+    pub area: f64,
+    #[pyo3(get)]
+    pub angle_deg: f64,
+}
+
+#[pyfunction(signature = (exterior, max_aspect_ratio=None, use_parallel_field=false))]
+pub fn solve_bcrs_py(
+    exterior: Vec<(f64, f64)>,
+    max_aspect_ratio: Option<f64>,
+    use_parallel_field: bool,
+) -> PyResult<PyBcrsResult> {
+    if exterior.len() < 3 {
+        return Err(PyValueError::new_err("polygon exterior must contain at least 3 points"));
+    }
+
+    let coords: Vec<Coord<f64>> = exterior
+        .into_iter()
+        .map(|(x, y)| Coord { x, y })
+        .collect();
+    let exterior_ls = LineString::from(coords);
+    let polygon = Polygon::new(exterior_ls, vec![]);
+
+    let mut opts = BcrsOptions::default();
+    if let Some(ratio) = max_aspect_ratio {
+        opts.max_ratio = ratio;
+    }
+    opts.use_parallel_field = use_parallel_field;
+
+    let result = solve_bcrs(&polygon, &opts)
+        .map_err(|e| PyValueError::new_err(format!("solve failed: {e}")))?;
+
+    let rect = result.rect.unwrap_or(ige_core::Rectangle {
+        x_min: 0.0, y_min: 0.0, x_max: 0.0, y_max: 0.0,
+    });
+
+    Ok(PyBcrsResult {
+        x_min: rect.x_min,
+        y_min: rect.y_min,
+        x_max: rect.x_max,
+        y_max: rect.y_max,
+        area: result.area,
+        angle_deg: result.angle_deg,
+    })
+}
+
 // ─── Module registration ──────────────────────────────────────────────────
 
 #[pymodule]
@@ -138,6 +198,9 @@ fn _native(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyAxisAlignedResult>()?;
     m.add_function(wrap_pyfunction!(solve_axis_aligned_py, m)?)?;
     m.add_function(wrap_pyfunction!(axis_aligned_demo, m)?)?;
+
+    m.add_class::<PyBcrsResult>()?;
+    m.add_function(wrap_pyfunction!(solve_bcrs_py, m)?)?;
 
     Ok(())
 }

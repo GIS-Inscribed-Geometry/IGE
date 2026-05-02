@@ -12,6 +12,7 @@ pub use crate::axis_aligned::{
 pub use crate::geometry::rotate_polygon;
 
 pub use crate::bcrs::solve_bcrs;
+pub use crate::bcrs::parallel::solve_bcrs_parallel;
 pub use crate::bcrs::{BcrsOptions, BcrsResult};
 
 /// Convenience wrapper: solve axis-aligned with default options.
