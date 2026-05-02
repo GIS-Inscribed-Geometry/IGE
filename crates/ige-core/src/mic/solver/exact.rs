@@ -8,9 +8,10 @@ use crate::mic::workspace::{MicCandidate, MicWorkspace};
 use crate::mic::{MicError, MicOptions, MicResult, MicUsedEngine, RobustMode};
 
 const CANDIDATE_QUANTIZE: f64 = 1e9;
-const SEG_TRIPLE_CAP: usize = 48;
-const SS_SEG_CAP: usize = 24;
-const SS_VERT_CAP: usize = 8;
+const SEG_TRIPLE_CAP: usize = 64;
+const SS_SEG_CAP: usize = 32;
+const SS_VERT_CAP: usize = 12;
+const MIN_SEGS_PER_RING: usize = 3;
 
 fn quantize_origin(host: &HostPolygon) -> (f64, f64) {
     let Some((min_x, min_y, max_x, _max_y)) = host.bounds() else {
@@ -146,6 +147,53 @@ fn sample_vertices(vertices: &[[f64; 2]], max_vertices: usize) -> Vec<[f64; 2]> 
     vertices.iter().step_by(step.max(1)).copied().collect()
 }
 
+/// Sample segments with ring awareness — guarantees at least MIN_SEGS_PER_RING
+/// from each ring before distributing the remaining budget by segment count.
+fn sample_segments_ring_aware(seg_index: &SegmentIndex, max_total: usize) -> Vec<usize> {
+    let n = seg_index.len();
+    if n <= max_total { return (0..n).collect(); }
+    if n == 0 || seg_index.ring_id.is_empty() { return Vec::new(); }
+
+    // Find ring boundaries in the flat segment list
+    let mut ring_starts: Vec<usize> = vec![0];
+    let mut last_rid = seg_index.ring_id[0];
+    for i in 1..n {
+        if seg_index.ring_id[i] != last_rid {
+            ring_starts.push(i);
+            last_rid = seg_index.ring_id[i];
+        }
+    }
+    let num_rings = ring_starts.len();
+    let mut ring_ends = ring_starts[1..].to_vec();
+    ring_ends.push(n);
+
+    // Allocate: MIN_SEGS_PER_RING guaranteed, remainder by proportion
+    let guaranteed = MIN_SEGS_PER_RING * num_rings;
+    let remaining = if max_total > guaranteed { max_total - guaranteed } else { 0 };
+
+    let mut result = Vec::with_capacity(max_total);
+    for ri in 0..num_rings {
+        let start = ring_starts[ri];
+        let end = ring_ends[ri];
+        let count = end - start;
+        let alloc = if count <= MIN_SEGS_PER_RING {
+            count
+        } else {
+            let extra = remaining * count / n;
+            MIN_SEGS_PER_RING + extra.min(count - MIN_SEGS_PER_RING)
+        };
+        if count <= alloc {
+            for idx in start..end { result.push(idx); }
+        } else {
+            let step = count / alloc;
+            for i in (0..count).step_by(step.max(1)).take(alloc) {
+                result.push(start + i);
+            }
+        }
+    }
+    result
+}
+
 // ---------------------------------------------------------------------------
 // Segment-triple incenter candidates (segment-segment-segment Voronoi vertices)
 // ---------------------------------------------------------------------------
@@ -159,12 +207,7 @@ fn generate_segment_triple_candidates(
     let n = seg_index.len();
     if n < 3 { return; }
     let lines = precompute_segment_lines(seg_index);
-    let sampled: Vec<usize> = if n <= SEG_TRIPLE_CAP {
-        (0..n).collect()
-    } else {
-        let step = n / SEG_TRIPLE_CAP;
-        (0..n).step_by(step.max(1)).take(SEG_TRIPLE_CAP).collect()
-    };
+    let sampled = sample_segments_ring_aware(seg_index, SEG_TRIPLE_CAP);
     for ii in 0..sampled.len() {
         let i = sampled[ii];
         for jj in ii + 1..sampled.len() {
@@ -235,13 +278,7 @@ fn generate_ssv_candidates(
 ) {
     if seg_index.len() < 2 || vertices.is_empty() { return; }
 
-    // Sample segments and vertices to a tiny budget
-    let sampled_segs: Vec<usize> = if seg_index.len() <= SS_SEG_CAP {
-        (0..seg_index.len()).collect()
-    } else {
-        let step = seg_index.len() / SS_SEG_CAP;
-        (0..seg_index.len()).step_by(step.max(1)).take(SS_SEG_CAP).collect()
-    };
+    let sampled_segs = sample_segments_ring_aware(seg_index, SS_SEG_CAP);
     let max_verts = SS_VERT_CAP.min(vertices.len());
     let sampled_verts: Vec<[f64; 2]> = if vertices.len() <= max_verts {
         vertices.to_vec()
