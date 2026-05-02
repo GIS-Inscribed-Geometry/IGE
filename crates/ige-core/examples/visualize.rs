@@ -502,20 +502,22 @@ fn main() {
         let mut rel_errs = Vec::new();
         let mut exact_ms_acc = 0.0;
         let mut geos_ms_acc = 0.0;
-        for (_idx, card, exact_r, geos_r, exact_ms, geos_ms) in &results {
+        // Track error direction: positive = exact larger, negative = GEOS larger
+        // Store (id, exact_r, geos_r, abs_err_pct, direction)
+        let mut per_polygon_errors: Vec<(String, f64, f64, f64, &str)> = Vec::new();
+        for (idx, card, exact_r, geos_r, exact_ms, geos_ms) in &results {
             cards.push_str(card);
             exact_ms_acc += *exact_ms;
             geos_ms_acc += *geos_ms;
-            if exact_r.is_some() {
-                exact_ok += 1;
-            }
-            if geos_r.is_some() {
-                geos_ok += 1;
-            }
+            if exact_r.is_some() { exact_ok += 1; }
+            if geos_r.is_some() { geos_ok += 1; }
             if let (Some(e), Some(g)) = (*exact_r, *geos_r) {
                 if g > 0.0 {
                     both_ok += 1;
-                    rel_errs.push((e - g).abs() / g * 100.0);
+                    let abs_pct = (e - g).abs() / g * 100.0;
+                    rel_errs.push(abs_pct);
+                    let dir = if e > g { "exact_larger" } else { "exact_smaller" };
+                    per_polygon_errors.push((all_polygons[*idx].0.clone(), e, g, abs_pct, dir));
                 }
             }
         }
@@ -534,6 +536,15 @@ fn main() {
         let avg_exact_ms = if n_results > 0 { exact_ms_acc / n_results as f64 } else { 0.0 };
         let avg_geos_ms = if n_results > 0 { geos_ms_acc / n_results as f64 } else { 0.0 };
 
+        // Collect top 10 errors (by absolute error)
+        per_polygon_errors.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+        let top_errors: Vec<serde_json::Value> = per_polygon_errors.iter().take(10).map(|(id, e, g, pct, dir)| {
+            serde_json::json!({
+                "id": id, "exact_radius": e, "geos_radius": g,
+                "err_pct": pct, "direction": dir,
+            })
+        }).collect();
+
         if use_json {
             let json = serde_json::json!({
                 "mode": "mic_compare",
@@ -542,6 +553,9 @@ fn main() {
                 "geos_ok": geos_ok,
                 "both_ok": both_ok,
                 "rel_err_pct": { "median": rel_median, "mean": rel_mean },
+                "exact_larger_count": per_polygon_errors.iter().filter(|e| e.4 == "exact_larger").count(),
+                "exact_smaller_count": per_polygon_errors.iter().filter(|e| e.4 == "exact_smaller").count(),
+                "top_errors": top_errors,
                 "avg_exact_ms": avg_exact_ms,
                 "avg_geos_ms": avg_geos_ms,
                 "speed_ratio": if avg_geos_ms > 0.0 { avg_exact_ms / avg_geos_ms } else { 0.0 },

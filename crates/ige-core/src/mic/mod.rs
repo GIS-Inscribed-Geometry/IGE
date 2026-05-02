@@ -142,6 +142,31 @@ fn solve_on_host_polygon(
     host: &HostPolygon,
     opts: &MicOptions,
 ) -> std::result::Result<MicResult, MicError> {
+    // Phase 0: Analytical fast paths — exact O(1), no workspace needed.
+    // Verification: compute the true nearest-boundary distance and compare.
+    // Reject if the analytical result is not within 1% of the true distance
+    // (catches degenerate inputs that match ring-length checks but are not
+    // valid triangles/quads — e.g., repeated vertices, near-zero areas).
+    if opts.engine == MicEngine::ExactOnly || opts.engine == MicEngine::ExactThenGeos {
+        'fast: {
+            let result = if let Some(r) = self::solver::exact::fast_triangle(host) { r }
+            else if let Some(r) = self::solver::exact::fast_convex_quad(host) { r }
+            else { break 'fast; };
+
+            // Verify: compute exact nearest-boundary distance via linear scan
+            let seg_idx = crate::mic::input::SegmentIndex::from_host(host);
+            let mut actual_sq = f64::INFINITY;
+            for idx in 0..seg_idx.len() {
+                let d = seg_idx.point_segment_distance_sq(idx, result.center.x(), result.center.y());
+                if d < actual_sq { actual_sq = d; }
+            }
+            let actual = actual_sq.sqrt();
+            if actual > 0.0 && (result.radius - actual).abs() / actual < 0.01 {
+                return Ok(result);
+            }
+        }
+    }
+
     match opts.engine {
         MicEngine::ExactOnly => run_exact(host, opts),
         MicEngine::FallbackOnly => run_geos(host, None, opts),

@@ -1,17 +1,77 @@
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
+
 use geo::Centroid;
 use geo_types::Point;
 use rustc_hash::FxHashSet;
 use spade::{ConstrainedDelaunayTriangulation, Point2, Triangulation};
 
+use crate::mic::index::NearestBoundaryIndex;
 use crate::mic::input::{HostPolygon, SegmentIndex};
 use crate::mic::workspace::{MicCandidate, MicWorkspace};
 use crate::mic::{MicError, MicOptions, MicResult, MicUsedEngine, RobustMode};
 
 const CANDIDATE_QUANTIZE: f64 = 1e9;
-const SEG_TRIPLE_CAP: usize = 64;
-const SS_SEG_CAP: usize = 32;
-const SS_VERT_CAP: usize = 12;
-const MIN_SEGS_PER_RING: usize = 3;
+
+// Baseline caps for simple (convex, few segments) polygons.
+const BASE_TRIPLE_CAP: usize = 64;
+const BASE_SS_SEG_CAP: usize = 32;
+const BASE_SS_VERT_CAP: usize = 12;
+const BASE_SEGS_PER_RING: usize = 3;
+
+// Extended caps for complex (concave, hole-containing, many segments) polygons.
+const EXT_TRIPLE_CAP: usize = 96;
+const EXT_SS_SEG_CAP: usize = 64;
+const EXT_SS_VERT_CAP: usize = 32;
+const EXT_SEGS_PER_RING: usize = 5;
+
+/// Check if a vertex at `vert_idx` in ring `ring_idx` is reflex (interior angle > 180°).
+fn reflex_vertex_in_ring(host: &HostPolygon, ring_idx: usize, vert_idx: usize) -> bool {
+    let meta = &host.rings[ring_idx];
+    let coords = &host.coords[meta.start..meta.end];
+    let n = if coords.len() >= 2 && coords.first() == coords.last() {
+        coords.len() - 1
+    } else {
+        coords.len()
+    };
+    if n < 3 { return false; }
+    let idx = vert_idx % n;
+    let prev = coords[(idx + n - 1) % n];
+    let cur = coords[idx];
+    let next = coords[(idx + 1) % n];
+    let cross = (cur[0]-prev[0])*(next[1]-cur[1]) - (cur[1]-prev[1])*(next[0]-cur[0]);
+    if meta.is_hole { cross > 1e-14 } else { cross < -1e-14 }
+}
+
+/// Count reflex vertices across all rings (concavity measure).
+fn count_reflex_vertices(host: &HostPolygon, seg_index: &SegmentIndex) -> usize {
+    use std::collections::HashSet;
+    let mut reflex_set = HashSet::new();
+    for seg_idx in 0..seg_index.len() {
+        let rid = seg_index.ring_id[seg_idx];
+        let eid = seg_index.edge_id[seg_idx];
+        if reflex_vertex_in_ring(host, rid, eid) || reflex_vertex_in_ring(host, rid, eid + 1) {
+            reflex_set.insert((rid, eid));
+        }
+    }
+    reflex_set.len()
+}
+
+/// Compute adaptive cap tier based on polygon complexity.
+/// Complex polygons (reflex vertices, holes, high segment count) get extended caps
+/// to ensure the candidate set covers the true MIC's support segments.
+fn caps_for(seg_count: usize, hole_count: usize, reflex_count: usize) -> (usize, usize, usize, usize) {
+    // Trigger extended caps if any of:
+    //   - >3 holes (cross-ring MIC constraints)
+    //   - >8 reflex vertices (deep concavity)
+    //   - >200 segments (dense boundary)
+    let complex = hole_count > 3 || reflex_count > 8 || seg_count > 200;
+    if complex {
+        (EXT_TRIPLE_CAP, EXT_SS_SEG_CAP, EXT_SS_VERT_CAP, EXT_SEGS_PER_RING)
+    } else {
+        (BASE_TRIPLE_CAP, BASE_SS_SEG_CAP, BASE_SS_VERT_CAP, BASE_SEGS_PER_RING)
+    }
+}
 
 fn quantize_origin(host: &HostPolygon) -> (f64, f64) {
     let Some((min_x, min_y, max_x, _max_y)) = host.bounds() else {
@@ -46,21 +106,28 @@ pub fn solve_exact(
         push_candidate(&mut workspace.candidate_buf, &mut seen, mx, my, q_origin);
     }
 
-    // 4. Segment-triple incenter candidates — covers segment-segment-segment Voronoi vertices.
-    //    Cap at 48 segments ensures bounded cost while catching cases CDT misses.
-    generate_segment_triple_candidates(&workspace.seg_index, &mut seen, &mut workspace.candidate_buf, q_origin);
+    // Compute adaptive caps based on polygon complexity.
+    let hole_count = workspace.host.rings.iter().filter(|r| r.is_hole).count();
+    let reflex_count = count_reflex_vertices(&workspace.host, &workspace.seg_index);
+    let seg_count = workspace.seg_index.len();
+    let (triple_cap, ss_seg_cap, ss_vert_cap, segs_per_ring) =
+        caps_for(seg_count, hole_count, reflex_count);
 
-    // 5. CDT circumcenters — O(n) Voronoi vertices, no sampling caps.
+    // 4. Segment-triple incenters — adaptive cap based on complexity
+    generate_segment_triple_candidates(&workspace.seg_index, &mut seen,
+        &mut workspace.candidate_buf, q_origin, triple_cap, segs_per_ring);
+
+    // 5. CDT circumcenters
     generate_cdt_candidates(&workspace.host, &mut seen, &mut workspace.candidate_buf, q_origin);
 
-    // 5. Ear circumcenters — ALL rings including holes.
+    // 6. Ear circumcenters — ALL rings including holes
     generate_ear_candidates_all_rings(&workspace.host, &mut seen, &mut workspace.candidate_buf, q_origin);
 
-    // 6. Filtered: seg-seg-vertex bisector candidates + vertex-triple circumcenters
+    // 7. Filtered: seg-seg-vertex bisector candidates + vertex-triple circumcenters
     if matches!(opts.robust_mode, RobustMode::Filtered) {
         let lines = precompute_segment_lines(&workspace.seg_index);
         generate_ssv_candidates(&workspace.seg_index, &lines, &vertices, &mut seen,
-            &mut workspace.candidate_buf, q_origin);
+            &mut workspace.candidate_buf, q_origin, ss_seg_cap, ss_vert_cap);
 
         let sampled = sample_vertices(&vertices, 48);
         for i in 0..sampled.len() {
@@ -103,15 +170,28 @@ pub fn solve_exact(
     }
 
     let best = best_any.ok_or(MicError::NoCircleFound)?;
-    let center = Point::new(best.x, best.y);
-    let support_eps = best.radius_sq.max(1.0) * 1e-10;
+
+    // Phase 4: Quadtree refinement from best candidate.
+    // Closes the gap between discrete candidate optimum and true MIC.
+    let (min_x, min_y, max_x, max_y) = workspace.host.bounds()
+        .unwrap_or((0.0, 0.0, 1.0, 1.0));
+    let diameter = (max_x - min_x).hypot(max_y - min_y).max(1.0);
+    let refine_tol = diameter * 1e-6;
+    let (ref_x, ref_y, ref_r) = refine_with_quadtree(
+        best.x, best.y, best.radius_sq.sqrt(),
+        pip_index, nb_index, refine_tol,
+    );
+
+    let center = Point::new(ref_x, ref_y);
+    let ref_r_sq = ref_r * ref_r;
+    let support_eps = ref_r_sq.max(1.0) * 1e-10;
     let support_segments =
-        nb_index.supporting_segments(best.x, best.y, best.radius_sq, support_eps);
+        nb_index.supporting_segments(ref_x, ref_y, ref_r_sq, support_eps);
 
     Ok(MicResult {
         center,
-        radius: best.radius_sq.sqrt(),
-        radius_sq: best.radius_sq,
+        radius: ref_r,
+        radius_sq: ref_r_sq,
         support_segments,
         candidate_count,
         used_engine: MicUsedEngine::Exact,
@@ -120,7 +200,89 @@ pub fn solve_exact(
 }
 
 // ---------------------------------------------------------------------------
-// Candidate insertion helpers
+// Phase 0: Fast paths — analytical solvers, no workspace needed.
+// ---------------------------------------------------------------------------
+
+/// Triangle incenter — exact O(1) MIC. Trigger: ring_count==1, outer.len()==4.
+pub fn fast_triangle(host: &HostPolygon) -> Option<MicResult> {
+    if host.ring_count() != 1 { return None; }
+    let outer = host.outer_ring();
+    if outer.len() != 4 { return None; }
+    let a = outer[0]; let b = outer[1]; let c = outer[2];
+    let la = (b[0]-c[0]).hypot(b[1]-c[1]);
+    let lb = (a[0]-c[0]).hypot(a[1]-c[1]);
+    let lc = (a[0]-b[0]).hypot(a[1]-b[1]);
+    let perim = la + lb + lc;
+    if perim <= 1e-14 { return None; }
+    let cx = (la*a[0] + lb*b[0] + lc*c[0]) / perim;
+    let cy = (la*a[1] + lb*b[1] + lc*c[1]) / perim;
+    let area = ((b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])).abs() * 0.5;
+    let r = 2.0 * area / perim;
+    if r <= 1e-6 { return None; }
+    Some(MicResult {
+        center: Point::new(cx, cy), radius: r, radius_sq: r*r,
+        support_segments: vec![], candidate_count: 1,
+        used_engine: MicUsedEngine::Exact, component_index: None,
+    })
+}
+
+/// Convex quadrilateral bisector-intersection — exact O(1) MIC.
+/// Trigger: ring_count==1, outer.len()==5, is_convex.
+pub fn fast_convex_quad(host: &HostPolygon) -> Option<MicResult> {
+    if host.ring_count() != 1 { return None; }
+    let outer = host.outer_ring();
+    if outer.len() != 5 { return None; }
+    // Check convexity: all cross products must have same sign (CCW positive)
+    let mut sign = 0i8;
+    for i in 0..4 {
+        let p = outer[(i+3)%4]; let c = outer[i]; let n = outer[(i+1)%4];
+        let cross = (c[0]-p[0])*(n[1]-c[1]) - (c[1]-p[1])*(n[0]-c[0]);
+        if cross.abs() <= 1e-14 { return None; }
+        let s = if cross > 0.0 { 1 } else { -1 };
+        if sign == 0 { sign = s; } else if s != sign { return None; }
+    }
+    // Build edge line equations: inward normal * x = c
+    let mut nx = [0.0f64; 4]; let mut ny = [0.0f64; 4]; let mut line_c = [0.0f64; 4];
+    for i in 0..4 {
+        let ax = outer[i][0]; let ay = outer[i][1];
+        let bx = outer[(i+1)%4][0]; let by = outer[(i+1)%4][1];
+        let dx = bx - ax; let dy = by - ay;
+        let len = dx.hypot(dy);
+        if len <= 1e-14 { return None; }
+        nx[i] = -dy / len; ny[i] = dx / len; // inward normal (CCW)
+        line_c[i] = nx[i]*ax + ny[i]*ay;
+    }
+    // Adjacent bisector intersections — 4 candidates, pick best interior
+    let mut best_r2 = 0.0f64; let mut best_cx = 0.0; let mut best_cy = 0.0; let mut found = false;
+    for i in 0..4 {
+        let j = (i+1)%4;
+        let det = nx[i]*ny[j] - ny[i]*nx[j];
+        if det.abs() <= 1e-14 { continue; }
+        let inv = 1.0 / det;
+        let cx = (line_c[i]*ny[j] - ny[i]*line_c[j]) * inv;
+        let cy = (nx[i]*line_c[j] - line_c[i]*nx[j]) * inv;
+        if !cx.is_finite() || !cy.is_finite() { continue; }
+        let mut ok = true;
+        for k in 0..4 {
+            if nx[k]*cx + ny[k]*cy - line_c[k] <= 0.0 { ok = false; break; }
+        }
+        if !ok { continue; }
+        let r2 = (nx[0]*cx + ny[0]*cy - line_c[0]);
+        let r2 = r2 * r2;
+        if r2 > best_r2 { best_r2 = r2; best_cx = cx; best_cy = cy; found = true; }
+    }
+    if !found { return None; }
+    let r = best_r2.sqrt();
+    if r <= 1e-6 { return None; }
+    Some(MicResult {
+        center: Point::new(best_cx, best_cy), radius: r, radius_sq: best_r2,
+        support_segments: vec![], candidate_count: 1,
+        used_engine: MicUsedEngine::Exact, component_index: None,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Quantization helpers
 // ---------------------------------------------------------------------------
 
 #[inline]
@@ -149,26 +311,23 @@ fn sample_vertices(vertices: &[[f64; 2]], max_vertices: usize) -> Vec<[f64; 2]> 
 
 /// Sample segments with ring awareness — guarantees at least MIN_SEGS_PER_RING
 /// from each ring before distributing the remaining budget by segment count.
-fn sample_segments_ring_aware(seg_index: &SegmentIndex, max_total: usize) -> Vec<usize> {
+fn sample_segments_ring_aware(seg_index: &SegmentIndex, max_total: usize, min_per_ring: usize) -> Vec<usize> {
     let n = seg_index.len();
-    if n <= max_total { return (0..n).collect(); }
-    if n == 0 || seg_index.ring_id.is_empty() { return Vec::new(); }
+    if n <= max_total || n == 0 { return (0..n).collect(); }
+    if seg_index.ring_id.is_empty() { return Vec::new(); }
 
     // Find ring boundaries in the flat segment list
     let mut ring_starts: Vec<usize> = vec![0];
     let mut last_rid = seg_index.ring_id[0];
     for i in 1..n {
-        if seg_index.ring_id[i] != last_rid {
-            ring_starts.push(i);
-            last_rid = seg_index.ring_id[i];
-        }
+        if seg_index.ring_id[i] != last_rid { ring_starts.push(i); last_rid = seg_index.ring_id[i]; }
     }
     let num_rings = ring_starts.len();
     let mut ring_ends = ring_starts[1..].to_vec();
     ring_ends.push(n);
 
-    // Allocate: MIN_SEGS_PER_RING guaranteed, remainder by proportion
-    let guaranteed = MIN_SEGS_PER_RING * num_rings;
+    // Allocate: min_per_ring guaranteed, remainder by segment count
+    let guaranteed = min_per_ring * num_rings;
     let remaining = if max_total > guaranteed { max_total - guaranteed } else { 0 };
 
     let mut result = Vec::with_capacity(max_total);
@@ -176,11 +335,11 @@ fn sample_segments_ring_aware(seg_index: &SegmentIndex, max_total: usize) -> Vec
         let start = ring_starts[ri];
         let end = ring_ends[ri];
         let count = end - start;
-        let alloc = if count <= MIN_SEGS_PER_RING {
+        let alloc = if count <= min_per_ring {
             count
         } else {
             let extra = remaining * count / n;
-            MIN_SEGS_PER_RING + extra.min(count - MIN_SEGS_PER_RING)
+            min_per_ring + extra.min(count - min_per_ring)
         };
         if count <= alloc {
             for idx in start..end { result.push(idx); }
@@ -203,11 +362,13 @@ fn generate_segment_triple_candidates(
     seen: &mut FxHashSet<(i64, i64)>,
     candidate_buf: &mut Vec<MicCandidate>,
     q_origin: (f64, f64),
+    triple_cap: usize,
+    segs_per_ring: usize,
 ) {
     let n = seg_index.len();
     if n < 3 { return; }
     let lines = precompute_segment_lines(seg_index);
-    let sampled = sample_segments_ring_aware(seg_index, SEG_TRIPLE_CAP);
+    let sampled = sample_segments_ring_aware(seg_index, triple_cap, segs_per_ring);
     for ii in 0..sampled.len() {
         let i = sampled[ii];
         for jj in ii + 1..sampled.len() {
@@ -275,11 +436,13 @@ fn generate_ssv_candidates(
     seen: &mut FxHashSet<(i64, i64)>,
     candidate_buf: &mut Vec<MicCandidate>,
     q_origin: (f64, f64),
+    ss_seg_cap: usize,
+    ss_vert_cap: usize,
 ) {
     if seg_index.len() < 2 || vertices.is_empty() { return; }
 
-    let sampled_segs = sample_segments_ring_aware(seg_index, SS_SEG_CAP);
-    let max_verts = SS_VERT_CAP.min(vertices.len());
+    let sampled_segs = sample_segments_ring_aware(seg_index, ss_seg_cap, 2);
+    let max_verts = ss_vert_cap.min(vertices.len());
     let sampled_verts: Vec<[f64; 2]> = if vertices.len() <= max_verts {
         vertices.to_vec()
     } else {
@@ -420,6 +583,61 @@ fn generate_ear_candidates_all_rings(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: Quadtree refinement pass
+// ---------------------------------------------------------------------------
+
+const SQRT_2: f64 = 1.4142135623730951;
+
+struct QuadCell(f64, f64, f64, f64);
+
+impl PartialEq for QuadCell {
+    fn eq(&self, other: &Self) -> bool { self.3 == other.3 }
+}
+impl Eq for QuadCell {}
+impl PartialOrd for QuadCell {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.3.partial_cmp(&other.3).map(|o| o.reverse())
+    }
+}
+impl Ord for QuadCell {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.3.partial_cmp(&other.3).unwrap_or(Ordering::Equal).reverse()
+    }
+}
+
+fn refine_with_quadtree(
+    bx: f64, by: f64, br: f64,
+    pip: &crate::mic::index::PipIndex,
+    nb: &NearestBoundaryIndex,
+    tol: f64,
+) -> (f64, f64, f64) {
+    let seed_h = br.max(1e-12) * 0.5;
+    let mut queue: BinaryHeap<QuadCell> = BinaryHeap::new();
+    queue.push(QuadCell(bx, by, seed_h, br + seed_h * SQRT_2));
+    let mut best_x = bx; let mut best_y = by; let mut best_r = br;
+    let mut iters = 0usize;
+    const MAX_ITERS: usize = 100;
+
+    while let Some(QuadCell(cx, cy, h, upper)) = queue.pop() {
+        iters += 1;
+        if iters > MAX_ITERS { break; }
+        if upper <= best_r + tol { break; }
+        if h < tol { continue; }
+        let h2 = h * 0.5;
+        for (dx, dy) in [(-h2,-h2), (h2,-h2), (-h2,h2), (h2,h2)] {
+            let nx = cx + dx; let ny = cy + dy;
+            if !pip.contains_strict_xy(nx, ny) { continue; }
+            let Some((r2, _)) = nb.nearest_distance_sq(nx, ny) else { continue; };
+            let r = r2.sqrt();
+            if r > best_r { best_r = r; best_x = nx; best_y = ny; }
+            let ub = r + h2 * SQRT_2;
+            if ub > best_r + tol { queue.push(QuadCell(nx, ny, h2, ub)); }
+        }
+    }
+    (best_x, best_y, best_r)
 }
 
 // ---------------------------------------------------------------------------
