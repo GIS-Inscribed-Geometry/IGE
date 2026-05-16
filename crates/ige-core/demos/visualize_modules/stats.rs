@@ -19,24 +19,38 @@ impl MicStats {
         Self::default()
     }
 
-    pub fn update(&mut self, idx: usize, _card: &str, exact_r: Option<f64>, geos_r: Option<f64>, exact_ms: f64, geos_ms: f64, polygon_ids: &[String]) {
+    pub fn update(
+        &mut self,
+        idx: usize,
+        _card: &str,
+        exact_r: Option<f64>,
+        geos_r: Option<f64>,
+        exact_ms: f64,
+        geos_ms: f64,
+        polygon_ids: &[String],
+    ) {
         self.exact_ms_acc += exact_ms;
         self.geos_ms_acc += geos_ms;
-        if exact_r.is_some() { self.exact_ok += 1; }
-        if geos_r.is_some() { self.geos_ok += 1; }
+        if exact_r.is_some() {
+            self.exact_ok += 1;
+        }
+        if geos_r.is_some() {
+            self.geos_ok += 1;
+        }
         if let (Some(e), Some(g)) = (exact_r, geos_r) {
             if g > 0.0 {
                 self.both_ok += 1;
                 let abs_pct = (e - g).abs() / g * 100.0;
                 self.rel_errs.push(abs_pct);
-                let dir = if e > g { 
+                let dir = if e > g {
                     self.exact_larger_count += 1;
-                    "exact_larger" 
-                } else { 
+                    "exact_larger"
+                } else {
                     self.exact_smaller_count += 1;
-                    "exact_smaller" 
+                    "exact_smaller"
                 };
-                self.per_polygon_errors.push((polygon_ids[idx].clone(), e, g, abs_pct, dir));
+                self.per_polygon_errors
+                    .push((polygon_ids[idx].clone(), e, g, abs_pct, dir));
             }
         }
     }
@@ -55,13 +69,22 @@ impl MicStats {
             sorted_rel_errs[sorted_rel_errs.len() / 2]
         };
 
-        let avg_exact_ms = if results_len > 0 { self.exact_ms_acc / results_len as f64 } else { 0.0 };
-        let avg_geos_ms = if results_len > 0 { self.geos_ms_acc / results_len as f64 } else { 0.0 };
+        let avg_exact_ms = if results_len > 0 {
+            self.exact_ms_acc / results_len as f64
+        } else {
+            0.0
+        };
+        let avg_geos_ms = if results_len > 0 {
+            self.geos_ms_acc / results_len as f64
+        } else {
+            0.0
+        };
 
         // Top 10 errors by absolute percentage error.
         let mut top_errors = self.per_polygon_errors;
         top_errors.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
-        let top_errors: Vec<serde_json::Value> = top_errors.iter()
+        let top_errors: Vec<serde_json::Value> = top_errors
+            .iter()
             .take(10)
             .map(|(id, e, g, pct, dir)| {
                 serde_json::json!({
@@ -103,14 +126,21 @@ impl FromIterator<(f64, f64)> for LirStats {
         let mut per_shape_pcts = Vec::new();
 
         for (ra, pa) in iter {
-            if ra > 0.0 { success += 1; }
+            if ra > 0.0 {
+                success += 1;
+            }
             total_rect_area += ra;
             total_poly_area += pa;
             let pct = if pa > 0.0 { ra / pa * 100.0 } else { 0.0 };
             per_shape_pcts.push(pct);
         }
 
-        Self { success, total_poly_area, total_rect_area, per_shape_pcts }
+        Self {
+            success,
+            total_poly_area,
+            total_rect_area,
+            per_shape_pcts,
+        }
     }
 }
 
@@ -129,7 +159,11 @@ impl LirStats {
         let mut sorted = self.per_shape_pcts.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let n = sorted.len();
-        if n > 0 { sorted[n / 2] } else { 0.0 }
+        if n > 0 {
+            sorted[n / 2]
+        } else {
+            0.0
+        }
     }
 
     /// Mean per-shape fill percentage.

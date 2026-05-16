@@ -14,17 +14,15 @@
 //!  4. Fine solve -- vertex-grid mask (parallel), LRIH, SDF-expand, certify.
 //!  5. Return best-certified LirOrientedResult.
 
+use super::super::axis_aligned::histogram::{lrih, lrih_vp};
+use super::candidates::{edge_candidate_angles, upper_bound_area};
+use super::certify::{best_effort_shrink_to_cover, certify_and_adjust};
+use super::expand::{expand_rect_gradient, expand_rect_to_boundary};
+use super::{LirOrientedOptions, LirOrientedResult};
+use crate::shared::{LirError, Rectangle, Result};
 use geo::{BoundingRect, Centroid, ConvexHull};
 use geo_types::{Coord, LineString, Point, Polygon};
 use rayon::prelude::*;
-use super::candidates::{edge_candidate_angles, upper_bound_area};
-use super::expand::{expand_rect_to_boundary, expand_rect_gradient};
-use super::certify::{certify_and_adjust, best_effort_shrink_to_cover};
-use super::{LirOrientedOptions, LirOrientedResult};
-use super::super::axis_aligned::histogram::{lrih, lrih_vp};
-use crate::shared::{LirError, Rectangle, Result};
-
-
 
 // --- Candidate struct -----------------------------------------------------
 
@@ -76,43 +74,81 @@ struct RotatedCoords {
 /// Rotate a polygon's coordinates around its centroid without allocating a
 /// `Polygon<f64>`.  The bounding-box falls out of the single coord pass.
 fn rotate_coords_only(poly: &Polygon<f64>, angle_deg: f64) -> RotatedCoords {
-    let centroid: Point<f64> = poly.centroid().map(|c| c.into()).unwrap_or(Point::new(0.0, 0.0));
+    let centroid: Point<f64> = poly
+        .centroid()
+        .map(|c| c.into())
+        .unwrap_or(Point::new(0.0, 0.0));
     let (cx, cy) = (centroid.x(), centroid.y());
     let rad = -angle_deg.to_radians();
     let (cos_a, sin_a) = (rad.cos(), rad.sin());
 
-    let mut minx = f64::MAX; let mut miny = f64::MAX;
-    let mut maxx = f64::MIN; let mut maxy = f64::MIN;
+    let mut minx = f64::MAX;
+    let mut miny = f64::MAX;
+    let mut maxx = f64::MIN;
+    let mut maxy = f64::MIN;
 
     let rotate = |c: &Coord<f64>| -> Coord<f64> {
-        let dx = c.x - cx; let dy = c.y - cy;
+        let dx = c.x - cx;
+        let dy = c.y - cy;
         Coord {
             x: cx + dx * cos_a - dy * sin_a,
             y: cy + dx * sin_a + dy * cos_a,
         }
     };
 
-    let ext: Vec<Coord<f64>> = poly.exterior().0.iter().map(|c| {
-        let r = rotate(c);
-        if r.x < minx { minx = r.x }
-        if r.x > maxx { maxx = r.x }
-        if r.y < miny { miny = r.y }
-        if r.y > maxy { maxy = r.y }
-        r
-    }).collect();
-
-    let holes: Vec<Vec<Coord<f64>>> = poly.interiors().iter().map(|ring| {
-        ring.0.iter().map(|c| {
+    let ext: Vec<Coord<f64>> = poly
+        .exterior()
+        .0
+        .iter()
+        .map(|c| {
             let r = rotate(c);
-            if r.x < minx { minx = r.x }
-            if r.x > maxx { maxx = r.x }
-            if r.y < miny { miny = r.y }
-            if r.y > maxy { maxy = r.y }
+            if r.x < minx {
+                minx = r.x
+            }
+            if r.x > maxx {
+                maxx = r.x
+            }
+            if r.y < miny {
+                miny = r.y
+            }
+            if r.y > maxy {
+                maxy = r.y
+            }
             r
-        }).collect()
-    }).collect();
+        })
+        .collect();
 
-    RotatedCoords { exterior: ext, holes, bbox: (minx, miny, maxx, maxy) }
+    let holes: Vec<Vec<Coord<f64>>> = poly
+        .interiors()
+        .iter()
+        .map(|ring| {
+            ring.0
+                .iter()
+                .map(|c| {
+                    let r = rotate(c);
+                    if r.x < minx {
+                        minx = r.x
+                    }
+                    if r.x > maxx {
+                        maxx = r.x
+                    }
+                    if r.y < miny {
+                        miny = r.y
+                    }
+                    if r.y > maxy {
+                        maxy = r.y
+                    }
+                    r
+                })
+                .collect()
+        })
+        .collect();
+
+    RotatedCoords {
+        exterior: ext,
+        holes,
+        bbox: (minx, miny, maxx, maxy),
+    }
 }
 
 // --- Parallel mask builder ------------------------------------------------
@@ -125,7 +161,9 @@ fn build_mask_parallel(
 ) -> Vec<bool> {
     let n_cols = xs.len().saturating_sub(1);
     let n_rows = ys.len().saturating_sub(1);
-    if n_cols == 0 || n_rows == 0 { return Vec::new(); }
+    if n_cols == 0 || n_rows == 0 {
+        return Vec::new();
+    }
 
     #[derive(Clone, Copy)]
     struct ActiveEdge {
@@ -155,7 +193,11 @@ fn build_mask_parallel(
             });
         }
     }
-    edges.sort_by(|a, b| a.y_min.partial_cmp(&b.y_min).unwrap_or(std::cmp::Ordering::Equal));
+    edges.sort_by(|a, b| {
+        a.y_min
+            .partial_cmp(&b.y_min)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut active: Vec<ActiveEdge> = Vec::new();
     let mut next_e = 0usize;
@@ -242,7 +284,10 @@ fn cross2(ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
 }
 
 fn take_rotated(rotations: &mut Vec<(f64, RotatedCoords)>, angle: f64) -> Option<RotatedCoords> {
-    if let Some(idx) = rotations.iter().position(|(a, _)| (*a - angle).abs() < 1e-9) {
+    if let Some(idx) = rotations
+        .iter()
+        .position(|(a, _)| (*a - angle).abs() < 1e-9)
+    {
         Some(rotations.swap_remove(idx).1)
     } else {
         None
@@ -251,7 +296,8 @@ fn take_rotated(rotations: &mut Vec<(f64, RotatedCoords)>, angle: f64) -> Option
 
 fn point_in_rotated_polygon(rc: &RotatedCoords, px: f64, py: f64) -> bool {
     let mut inside = false;
-    for ring in std::iter::once(rc.exterior.as_slice()).chain(rc.holes.iter().map(|h| h.as_slice())) {
+    for ring in std::iter::once(rc.exterior.as_slice()).chain(rc.holes.iter().map(|h| h.as_slice()))
+    {
         if ring.len() < 2 {
             continue;
         }
@@ -271,7 +317,8 @@ fn point_in_rotated_polygon(rc: &RotatedCoords, px: f64, py: f64) -> bool {
 
 fn ray_distance_to_boundary(rc: &RotatedCoords, px: f64, py: f64, dx: f64, dy: f64) -> Option<f64> {
     let mut best = f64::INFINITY;
-    for ring in std::iter::once(rc.exterior.as_slice()).chain(rc.holes.iter().map(|h| h.as_slice())) {
+    for ring in std::iter::once(rc.exterior.as_slice()).chain(rc.holes.iter().map(|h| h.as_slice()))
+    {
         for w in ring.windows(2) {
             let a = w[0];
             let b = w[1];
@@ -290,7 +337,11 @@ fn ray_distance_to_boundary(rc: &RotatedCoords, px: f64, py: f64, dx: f64, dy: f
             }
         }
     }
-    if best.is_finite() { Some(best) } else { None }
+    if best.is_finite() {
+        Some(best)
+    } else {
+        None
+    }
 }
 
 fn clamp_ratio_about_center(
@@ -332,11 +383,7 @@ fn clamp_ratio_about_center(
     }
 }
 
-fn cross_ray_clearances(
-    rc: &RotatedCoords,
-    cx: f64,
-    cy: f64,
-) -> Option<(f64, f64, f64, f64)> {
+fn cross_ray_clearances(rc: &RotatedCoords, cx: f64, cy: f64) -> Option<(f64, f64, f64, f64)> {
     let dpx = ray_distance_to_boundary(rc, cx, cy, 1.0, 0.0)?;
     let dnx = ray_distance_to_boundary(rc, cx, cy, -1.0, 0.0)?;
     let dpy = ray_distance_to_boundary(rc, cx, cy, 0.0, 1.0)?;
@@ -495,11 +542,8 @@ fn center_seed_from_unconstrained_rect(
 /// non-rectangular polygons (33-41% fill ratio shapes attempting 45° rotations).
 /// To re-enable, need accurate signed area computation and higher threshold (>0.90).
 #[allow(dead_code)]
-fn try_fast_path_rectangle(
-    _poly: &Polygon<f64>,
-    _max_ratio: f64,
-) -> Option<Candidate> {
-    None  // Disabled
+fn try_fast_path_rectangle(_poly: &Polygon<f64>, _max_ratio: f64) -> Option<Candidate> {
+    None // Disabled
 }
 
 fn run_simulated_annealing_candidates(
@@ -522,7 +566,9 @@ fn run_simulated_annealing_candidates(
     let mut out = Vec::with_capacity(chain_count * 2);
 
     for (si, seed) in seeds.iter().take(chain_count).enumerate() {
-        let mut rng = TinyRng::new((seed.angle.to_bits() ^ (si as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15)) | 1);
+        let mut rng = TinyRng::new(
+            (seed.angle.to_bits() ^ (si as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15)) | 1,
+        );
 
         // Initialize chain with the seed candidate
         let mut current_angle = seed.angle;
@@ -541,7 +587,9 @@ fn run_simulated_annealing_candidates(
             let proposal_angle = wrap_angle_90(current_angle + rng.normal() * sigma_a);
 
             // Evaluate proposal using coarse evaluate (actual area landscape)
-            let Some((proposal_cand, _rc)) = coarse_evaluate_angle(poly, proposal_angle, coarse_steps, max_ratio, min_ratio) else {
+            let Some((proposal_cand, _rc)) =
+                coarse_evaluate_angle(poly, proposal_angle, coarse_steps, max_ratio, min_ratio)
+            else {
                 continue;
             };
 
@@ -623,7 +671,11 @@ fn coarse_evaluate_angles(
                 }
             }
 
-            let candidate = best_local.map(|(x0, y0, x1, y1, area)| Candidate { angle, area, rect_rot: (x0, y0, x1, y1) });
+            let candidate = best_local.map(|(x0, y0, x1, y1, area)| Candidate {
+                angle,
+                area,
+                rect_rot: (x0, y0, x1, y1),
+            });
             candidate.map(|c| (c, rc))
         })
         .collect()
@@ -679,7 +731,11 @@ fn coarse_evaluate_angle(
         }
     }
 
-    let candidate = best_local.map(|(x0, y0, x1, y1, area)| Candidate { angle, area, rect_rot: (x0, y0, x1, y1) });
+    let candidate = best_local.map(|(x0, y0, x1, y1, area)| Candidate {
+        angle,
+        area,
+        rect_rot: (x0, y0, x1, y1),
+    });
     candidate.map(|c| (c, rc))
 }
 
@@ -728,14 +784,26 @@ fn fine_solve_candidate(
         let (sx0, sy0, sx1, sy1) = candidate.rect_rot;
         let rot = Polygon::new(
             LineString::from(rc.exterior.clone()),
-            rc.holes.iter().map(|h| LineString::from(h.clone())).collect(),
+            rc.holes
+                .iter()
+                .map(|h| LineString::from(h.clone()))
+                .collect(),
         );
         let expanded = if use_gradient_expand {
             expand_rect_gradient(&rot, sx0, sy0, sx1, sy1, max_ratio, min_ratio)
         } else {
             expand_rect_to_boundary(&rot, sx0, sy0, sx1, sy1, max_ratio, min_ratio)
         };
-        return build_result(poly, angle, expanded, max_ratio, always_return, &centroid, cert_eps, cert_max_shrink);
+        return build_result(
+            poly,
+            angle,
+            expanded,
+            max_ratio,
+            always_return,
+            &centroid,
+            cert_eps,
+            cert_max_shrink,
+        );
     }
 
     let n_cols = xs_raw.len().saturating_sub(1);
@@ -775,14 +843,26 @@ fn fine_solve_candidate(
     let (fx0, fy0, fx1, fy1, _) = best_local?;
     let rot = Polygon::new(
         LineString::from(rc.exterior.clone()),
-        rc.holes.iter().map(|h| LineString::from(h.clone())).collect(),
+        rc.holes
+            .iter()
+            .map(|h| LineString::from(h.clone()))
+            .collect(),
     );
     let expanded = if use_gradient_expand {
         expand_rect_gradient(&rot, fx0, fy0, fx1, fy1, max_ratio, min_ratio)
     } else {
         expand_rect_to_boundary(&rot, fx0, fy0, fx1, fy1, max_ratio, min_ratio)
     };
-    build_result(poly, angle, expanded, max_ratio, always_return, &centroid, cert_eps, cert_max_shrink)
+    build_result(
+        poly,
+        angle,
+        expanded,
+        max_ratio,
+        always_return,
+        &centroid,
+        cert_eps,
+        cert_max_shrink,
+    )
 }
 
 // --- Certification & result -----------------------------------------------
@@ -863,7 +943,10 @@ fn rotate_point(x: f64, y: f64, angle_deg: f64, origin: &Point<f64>) -> Coord<f6
 /// This is an alternative to `solve_lir_oriented` that sacrifices the Brent
 /// angle-polish and heuristic pruning stages in exchange for exhaustively
 /// evaluating more angles in parallel.
-pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOptions) -> Result<LirOrientedResult> {
+pub fn solve_lir_oriented_parallel(
+    poly: &Polygon<f64>,
+    options: &LirOrientedOptions,
+) -> Result<LirOrientedResult> {
     // Fast path for simple convex shapes
     if let Some((rect_poly, area, angle, _)) =
         super::fast::maybe_fast_path(poly, options.max_ratio, options.min_ratio)
@@ -899,12 +982,22 @@ pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOpt
     // This preserves coarse top-k correctness while skipping hopeless angles.
     let hull = poly.convex_hull();
     let coarse_steps = options.grid_coarse.max(8);
-    let hull_centroid: Point<f64> = hull.centroid().map(|c| c.into()).unwrap_or(Point::new(0.0, 0.0));
+    let hull_centroid: Point<f64> = hull
+        .centroid()
+        .map(|c| c.into())
+        .unwrap_or(Point::new(0.0, 0.0));
 
-    let mut ub_scored: Vec<(f64, f64)> = all_angles.iter().filter_map(|&a| {
-        let ub = upper_bound_area(&hull, a, options.max_ratio, hull_centroid);
-        if ub > 0.0 { Some((a, ub)) } else { None }
-    }).collect();
+    let mut ub_scored: Vec<(f64, f64)> = all_angles
+        .iter()
+        .filter_map(|&a| {
+            let ub = upper_bound_area(&hull, a, options.max_ratio, hull_centroid);
+            if ub > 0.0 {
+                Some((a, ub))
+            } else {
+                None
+            }
+        })
+        .collect();
     ub_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let top_needed = options.top_k.max(5);
@@ -928,7 +1021,13 @@ pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOpt
 
         evaluated_angles.push(angle);
 
-        let c = coarse_evaluate_angle(&poly, angle, coarse_steps, options.max_ratio, options.min_ratio);
+        let c = coarse_evaluate_angle(
+            &poly,
+            angle,
+            coarse_steps,
+            options.max_ratio,
+            options.min_ratio,
+        );
 
         if let Some((c, rc)) = c {
             let area = c.area;
@@ -957,23 +1056,38 @@ pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOpt
     }
 
     // Local refinement: search +/-1, +/-2 deg around top 3 candidates
-    candidates.sort_by(|a, b| b.area.partial_cmp(&a.area).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.area
+            .partial_cmp(&a.area)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let best_angles: Vec<f64> = candidates.iter().map(|c| c.angle).take(3).collect();
-    let refinement_angles: Vec<f64> = best_angles.iter().flat_map(|&base| {
-        vec![base - 2.0, base - 1.0, base + 1.0, base + 2.0]
-    }).filter(|&a| a >= 0.0 && a <= 90.0)
+    let refinement_angles: Vec<f64> = best_angles
+        .iter()
+        .flat_map(|&base| vec![base - 2.0, base - 1.0, base + 1.0, base + 2.0])
+        .filter(|&a| a >= 0.0 && a <= 90.0)
         .filter(|a| !evaluated_angles.iter().any(|ta| (ta - a).abs() < 0.5))
         .collect();
 
     if !refinement_angles.is_empty() {
-        let refined = coarse_evaluate_angles(&poly, &refinement_angles, coarse_steps, options.max_ratio, options.min_ratio);
+        let refined = coarse_evaluate_angles(
+            &poly,
+            &refinement_angles,
+            coarse_steps,
+            options.max_ratio,
+            options.min_ratio,
+        );
         for (c, rc) in refined {
             coarse_rotations.push((c.angle, rc));
             candidates.push(c);
         }
     }
 
-    candidates.sort_by(|a, b| b.area.partial_cmp(&a.area).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.area
+            .partial_cmp(&a.area)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut seen: Vec<f64> = Vec::new();
     candidates.retain(|c| {
         if seen.iter().any(|&s| (c.angle - s).abs() < 2.0) {
@@ -986,9 +1100,19 @@ pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOpt
 
     if options.use_simulated_annealing {
         let seed_n = candidates.len().min(options.top_k.max(6));
-        let sa_candidates = run_simulated_annealing_candidates(&poly, &candidates[..seed_n], options.max_ratio, options.min_ratio, coarse_steps);
+        let sa_candidates = run_simulated_annealing_candidates(
+            &poly,
+            &candidates[..seed_n],
+            options.max_ratio,
+            options.min_ratio,
+            coarse_steps,
+        );
         candidates.extend(sa_candidates);
-        candidates.sort_by(|a, b| b.area.partial_cmp(&a.area).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.sort_by(|a, b| {
+            b.area
+                .partial_cmp(&a.area)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let mut seen_sa: Vec<f64> = Vec::new();
         // Wider dedup tolerance for SA: allow candidates within 2.0° to survive dedup
         candidates.retain(|c| {
@@ -1001,9 +1125,14 @@ pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOpt
         });
     }
 
-    let top_k = candidates
-        .len()
-        .min(options.top_k.max(5) + if options.use_simulated_annealing { 4 } else { 0 });
+    let top_k = candidates.len().min(
+        options.top_k.max(5)
+            + if options.use_simulated_annealing {
+                4
+            } else {
+                0
+            },
+    );
 
     let fine_results: Vec<Option<LirOrientedResult>> = candidates[..top_k]
         .iter()
@@ -1027,7 +1156,11 @@ pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOpt
     let mut best = fine_results
         .into_iter()
         .flatten()
-        .max_by(|a, b| a.area.partial_cmp(&b.area).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|a, b| {
+            a.area
+                .partial_cmp(&b.area)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .ok_or(LirError::NoRectangleFound)?;
 
     // Optional post-refinement around the best angle for improved accuracy.
@@ -1040,7 +1173,13 @@ pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOpt
             .filter(|a| *a >= 0.0 && *a <= 90.0)
             .collect();
         if !polish_angles.is_empty() {
-            let polished = coarse_evaluate_angles(&poly, &polish_angles, coarse_steps.max(16), options.max_ratio, options.min_ratio);
+            let polished = coarse_evaluate_angles(
+                &poly,
+                &polish_angles,
+                coarse_steps.max(16),
+                options.max_ratio,
+                options.min_ratio,
+            );
             let mut polished_candidates = Vec::new();
             for (c, rc) in polished {
                 coarse_rotations.push((c.angle, rc));
@@ -1064,11 +1203,11 @@ pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOpt
                     )
                 })
                 .collect();
-            if let Some(polished_best) = polished_results
-                .into_iter()
-                .flatten()
-                .max_by(|a, b| a.area.partial_cmp(&b.area).unwrap_or(std::cmp::Ordering::Equal))
-            {
+            if let Some(polished_best) = polished_results.into_iter().flatten().max_by(|a, b| {
+                a.area
+                    .partial_cmp(&b.area)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }) {
                 if polished_best.area > best.area {
                     best = polished_best;
                 }
@@ -1199,10 +1338,7 @@ pub fn solve_lir_oriented_parallel(poly: &Polygon<f64>, options: &LirOrientedOpt
             .par_iter()
             .map(|&test_angle| {
                 let edge_candidates = super::edge_anchor::generate_edge_anchored_candidates(
-                    &poly,
-                    test_angle,
-                    options,
-                    best.area,
+                    &poly, test_angle, options, best.area,
                 );
 
                 let mut local_best: Option<LirOrientedResult> = None;
@@ -1253,10 +1389,13 @@ mod tests {
     fn parallel_square() {
         let poly = Polygon::new(
             LineString::from(vec![
-                coord! {x:0.0,y:0.0}, coord! {x:10.0,y:0.0},
-                coord! {x:10.0,y:10.0}, coord! {x:0.0,y:10.0},
                 coord! {x:0.0,y:0.0},
-            ]), vec![],
+                coord! {x:10.0,y:0.0},
+                coord! {x:10.0,y:10.0},
+                coord! {x:0.0,y:10.0},
+                coord! {x:0.0,y:0.0},
+            ]),
+            vec![],
         );
         let r = solve_lir_oriented_parallel(&poly, &LirOrientedOptions::default()).unwrap();
         assert!(r.area > 80.0);
@@ -1267,9 +1406,12 @@ mod tests {
     fn parallel_triangle() {
         let poly = Polygon::new(
             LineString::from(vec![
-                coord! {x:0.0,y:0.0}, coord! {x:10.0,y:0.0},
-                coord! {x:0.0,y:10.0}, coord! {x:0.0,y:0.0},
-            ]), vec![],
+                coord! {x:0.0,y:0.0},
+                coord! {x:10.0,y:0.0},
+                coord! {x:0.0,y:10.0},
+                coord! {x:0.0,y:0.0},
+            ]),
+            vec![],
         );
         let r = solve_lir_oriented_parallel(&poly, &LirOrientedOptions::default()).unwrap();
         assert!(r.area > 20.0);
@@ -1282,10 +1424,13 @@ mod tests {
         // With max_ratio=2 the long side is capped to 10, so area should be ~50.
         let poly = Polygon::new(
             LineString::from(vec![
-                coord! {x:0.0,y:0.0}, coord! {x:20.0,y:0.0},
-                coord! {x:20.0,y:5.0}, coord! {x:0.0,y:5.0},
                 coord! {x:0.0,y:0.0},
-            ]), vec![],
+                coord! {x:20.0,y:0.0},
+                coord! {x:20.0,y:5.0},
+                coord! {x:0.0,y:5.0},
+                coord! {x:0.0,y:0.0},
+            ]),
+            vec![],
         );
         let mut opts = LirOrientedOptions::default();
         opts.max_ratio = 2.0;
@@ -1300,9 +1445,12 @@ mod tests {
         // and the LRIH sweep clips the ratio correctly.
         let poly = Polygon::new(
             LineString::from(vec![
-                coord! {x:0.0,y:0.0}, coord! {x:10.0,y:0.0},
-                coord! {x:0.0,y:10.0}, coord! {x:0.0,y:0.0},
-            ]), vec![],
+                coord! {x:0.0,y:0.0},
+                coord! {x:10.0,y:0.0},
+                coord! {x:0.0,y:10.0},
+                coord! {x:0.0,y:0.0},
+            ]),
+            vec![],
         );
         let mut opts = LirOrientedOptions::default();
         opts.max_ratio = 1.0;
@@ -1316,9 +1464,12 @@ mod tests {
     fn parallel_with_sa_rescue() {
         let poly = Polygon::new(
             LineString::from(vec![
-                coord! {x:0.0,y:0.0}, coord! {x:10.0,y:0.0},
-                coord! {x:8.0,y:2.0}, coord! {x:6.0,y:8.0},
-                coord! {x:2.0,y:9.0}, coord! {x:0.0,y:0.0},
+                coord! {x:0.0,y:0.0},
+                coord! {x:10.0,y:0.0},
+                coord! {x:8.0,y:2.0},
+                coord! {x:6.0,y:8.0},
+                coord! {x:2.0,y:9.0},
+                coord! {x:0.0,y:0.0},
             ]),
             vec![],
         );

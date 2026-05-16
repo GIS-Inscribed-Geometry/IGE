@@ -17,7 +17,7 @@ use crate::shared::{Rectangle, Result};
 
 #[cfg(feature = "gpu")]
 use crate::gpu::GpuContext;
-pub use expand::{expand_rect_to_boundary, expand_rect_gradient};
+pub use expand::{expand_rect_gradient, expand_rect_to_boundary};
 pub use parallel::solve_lir_oriented_parallel;
 pub use prepare::{prepare_polygon, simplify_for_solve};
 
@@ -167,7 +167,6 @@ pub(crate) struct AngleCandidate {
 
 // ─── Rectangle frame helpers ──────────────────────────────────────────────
 
-
 /// Solve the largest inscribed rectangle using BCRS + SDF pipeline.
 ///
 /// # Arguments
@@ -176,7 +175,10 @@ pub(crate) struct AngleCandidate {
 ///
 /// # Returns
 /// A `LirOrientedResult` with the best rectangle (AABB in world frame), area, angle, etc.
-pub fn solve_lir_oriented(poly: &Polygon<f64>, options: &LirOrientedOptions) -> Result<LirOrientedResult> {
+pub fn solve_lir_oriented(
+    poly: &Polygon<f64>,
+    options: &LirOrientedOptions,
+) -> Result<LirOrientedResult> {
     solve_lir_oriented_parallel(poly, options)
 }
 
@@ -289,7 +291,10 @@ mod tests {
             vec![],
         );
         let result = solve_lir_oriented(&poly, &LirOrientedOptions::default());
-        assert!(result.is_ok(), "LIR Approximate Oriented should find a rect in a triangle");
+        assert!(
+            result.is_ok(),
+            "LIR Approximate Oriented should find a rect in a triangle"
+        );
     }
 
     #[test]

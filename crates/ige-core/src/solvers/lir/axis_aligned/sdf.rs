@@ -46,16 +46,23 @@ pub fn polygon_sdf(poly: &Polygon<f64>, x: f64, y: f64) -> f64 {
 
             // Winding number increment (robust crossing test)
             if ay <= y {
-                if by > y && cross2d(ax - x, ay - y, bx - x, by - y) > 0.0 { winding += 1; }
+                if by > y && cross2d(ax - x, ay - y, bx - x, by - y) > 0.0 {
+                    winding += 1;
+                }
             } else {
-                if by <= y && cross2d(ax - x, ay - y, bx - x, by - y) < 0.0 { winding -= 1; }
+                if by <= y && cross2d(ax - x, ay - y, bx - x, by - y) < 0.0 {
+                    winding -= 1;
+                }
             }
-
         }
     }
 
     let d = min_dist_sq.sqrt();
-    if winding != 0 { -d } else { d }  // negative = inside
+    if winding != 0 {
+        -d
+    } else {
+        d
+    } // negative = inside
 }
 
 /// Compute the gradient of the SDF using central differences.
@@ -71,7 +78,9 @@ pub fn sdf_gradient(poly: &Polygon<f64>, x: f64, y: f64) -> (f64, f64) {
 }
 
 #[inline(always)]
-fn cross2d(ux: f64, uy: f64, vx: f64, vy: f64) -> f64 { ux * vy - uy * vx }
+fn cross2d(ux: f64, uy: f64, vx: f64, vy: f64) -> f64 {
+    ux * vy - uy * vx
+}
 
 #[inline(always)]
 fn min_dist_sq_ring_scalar(coords: &[Coord<f64>], x: f64, y: f64) -> f64 {
@@ -121,10 +130,30 @@ unsafe fn min_dist_sq_ring_avx(coords: &[Coord<f64>], x: f64, y: f64) -> f64 {
 
     let mut i = 0usize;
     while i + 4 <= n {
-        let ax = arch::_mm256_set_pd(coords[i + 3].x, coords[i + 2].x, coords[i + 1].x, coords[i].x);
-        let ay = arch::_mm256_set_pd(coords[i + 3].y, coords[i + 2].y, coords[i + 1].y, coords[i].y);
-        let bx = arch::_mm256_set_pd(coords[i + 4].x, coords[i + 3].x, coords[i + 2].x, coords[i + 1].x);
-        let by = arch::_mm256_set_pd(coords[i + 4].y, coords[i + 3].y, coords[i + 2].y, coords[i + 1].y);
+        let ax = arch::_mm256_set_pd(
+            coords[i + 3].x,
+            coords[i + 2].x,
+            coords[i + 1].x,
+            coords[i].x,
+        );
+        let ay = arch::_mm256_set_pd(
+            coords[i + 3].y,
+            coords[i + 2].y,
+            coords[i + 1].y,
+            coords[i].y,
+        );
+        let bx = arch::_mm256_set_pd(
+            coords[i + 4].x,
+            coords[i + 3].x,
+            coords[i + 2].x,
+            coords[i + 1].x,
+        );
+        let by = arch::_mm256_set_pd(
+            coords[i + 4].y,
+            coords[i + 3].y,
+            coords[i + 2].y,
+            coords[i + 1].y,
+        );
 
         let ex = arch::_mm256_sub_pd(bx, ax);
         let ey = arch::_mm256_sub_pd(by, ay);
@@ -136,7 +165,10 @@ unsafe fn min_dist_sq_ring_avx(coords: &[Coord<f64>], x: f64, y: f64) -> f64 {
             arch::_mm256_add_pd(arch::_mm256_mul_pd(ex, ex), arch::_mm256_mul_pd(ey, ey)),
             eps,
         );
-        let t = arch::_mm256_max_pd(zero, arch::_mm256_min_pd(one, arch::_mm256_div_pd(num, den)));
+        let t = arch::_mm256_max_pd(
+            zero,
+            arch::_mm256_min_pd(one, arch::_mm256_div_pd(num, den)),
+        );
         let px = arch::_mm256_add_pd(ax, arch::_mm256_mul_pd(t, ex));
         let py = arch::_mm256_add_pd(ay, arch::_mm256_mul_pd(t, ey));
         let dx = arch::_mm256_sub_pd(vx, px);
@@ -221,18 +253,18 @@ unsafe fn min_dist_sq_ring_sse2(coords: &[Coord<f64>], x: f64, y: f64) -> f64 {
 
 /// Maximum SDF at 8 sample points of an axis-aligned rect (4 corners + 4 edge midpoints).
 /// Negative result means all samples are strictly inside the polygon.
-pub fn rect_sdf_max(
-    poly: &Polygon<f64>,
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
-) -> f64 {
+pub fn rect_sdf_max(poly: &Polygon<f64>, x0: f64, y0: f64, x1: f64, y1: f64) -> f64 {
     let cx = (x0 + x1) * 0.5;
     let cy = (y0 + y1) * 0.5;
     let pts = [
-        (x0, y0), (x1, y0), (x1, y1), (x0, y1), // corners
-        (cx, y0), (x1, cy), (cx, y1), (x0, cy),  // edge midpoints
+        (x0, y0),
+        (x1, y0),
+        (x1, y1),
+        (x0, y1), // corners
+        (cx, y0),
+        (x1, cy),
+        (cx, y1),
+        (x0, cy), // edge midpoints
     ];
     pts.iter()
         .map(|&(px, py)| polygon_sdf(poly, px, py))
@@ -352,7 +384,10 @@ mod tests {
         let poly = square();
         let d = polygon_sdf(&poly, 5.0, 5.0);
         assert!(d < 0.0, "centre should be inside, got {d}");
-        assert!((d + 5.0).abs() < 1e-9, "distance to nearest wall = 5.0, got {d}");
+        assert!(
+            (d + 5.0).abs() < 1e-9,
+            "distance to nearest wall = 5.0, got {d}"
+        );
     }
 
     #[test]
@@ -374,7 +409,13 @@ mod tests {
     fn simd_distance_matches_scalar() {
         let poly = square();
         let ring = poly.exterior().0.as_slice();
-        let samples = [(5.0, 5.0), (12.0, 5.0), (0.0, 5.0), (9.25, 1.5), (-3.0, -2.0)];
+        let samples = [
+            (5.0, 5.0),
+            (12.0, 5.0),
+            (0.0, 5.0),
+            (9.25, 1.5),
+            (-3.0, -2.0),
+        ];
         for &(x, y) in &samples {
             let d2_scalar = min_dist_sq_ring_scalar(ring, x, y);
             let d2_simd = min_dist_sq_ring_simd(ring, x, y);
@@ -412,6 +453,9 @@ mod tests {
     fn certify_massively_outside_returns_none() {
         let poly = square();
         let result = certify_rect(&poly, -5.0, -5.0, 15.0, 15.0, 0.0);
-        assert!(result.is_none(), "wildly outside rect should fail certification");
+        assert!(
+            result.is_none(),
+            "wildly outside rect should fail certification"
+        );
     }
 }

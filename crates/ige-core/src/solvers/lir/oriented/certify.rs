@@ -9,7 +9,9 @@ use geo::Area;
 use geo_types::{Coord, LineString, Polygon};
 
 fn rect_local_frame(corners: &[(f64, f64)]) -> Option<(f64, f64, f64, f64, f64, f64, f64, f64)> {
-    if corners.len() < 5 { return None; }
+    if corners.len() < 5 {
+        return None;
+    }
     let p0 = (corners[0].0, corners[0].1);
     let p1 = (corners[1].0, corners[1].1);
     let p2 = (corners[2].0, corners[2].1);
@@ -17,25 +19,65 @@ fn rect_local_frame(corners: &[(f64, f64)]) -> Option<(f64, f64, f64, f64, f64, 
     let e1 = (p2.0 - p1.0, p2.1 - p1.1);
     let l0 = (e0.0 * e0.0 + e0.1 * e0.1).sqrt();
     let l1 = (e1.0 * e1.0 + e1.1 * e1.1).sqrt();
-    if l0 < 1e-14 || l1 < 1e-14 { return None; }
+    if l0 < 1e-14 || l1 < 1e-14 {
+        return None;
+    }
     let cx = (p0.0 + p2.0) / 2.0;
     let cy = (p0.1 + p2.1) / 2.0;
     let (ux, uy, vx, vy, a, b) = if l0 >= l1 {
-        (e0.0 / l0, e0.1 / l0, e1.0 / l1, e1.1 / l1, l0 / 2.0, l1 / 2.0)
+        (
+            e0.0 / l0,
+            e0.1 / l0,
+            e1.0 / l1,
+            e1.1 / l1,
+            l0 / 2.0,
+            l1 / 2.0,
+        )
     } else {
-        (e1.0 / l1, e1.1 / l1, e0.0 / l0, e0.1 / l0, l1 / 2.0, l0 / 2.0)
+        (
+            e1.0 / l1,
+            e1.1 / l1,
+            e0.0 / l0,
+            e0.1 / l0,
+            l1 / 2.0,
+            l0 / 2.0,
+        )
     };
     Some((cx, cy, ux, uy, vx, vy, a, b))
 }
 
-fn build_rect_from_frame(cx: f64, cy: f64, ux: f64, uy: f64, vx: f64, vy: f64, a: f64, b: f64) -> Polygon<f64> {
+fn build_rect_from_frame(
+    cx: f64,
+    cy: f64,
+    ux: f64,
+    uy: f64,
+    vx: f64,
+    vy: f64,
+    a: f64,
+    b: f64,
+) -> Polygon<f64> {
     Polygon::new(
         LineString::from(vec![
-            Coord { x: cx + a * ux + b * vx, y: cy + a * uy + b * vy },
-            Coord { x: cx - a * ux + b * vx, y: cy - a * uy + b * vy },
-            Coord { x: cx - a * ux - b * vx, y: cy - a * uy - b * vy },
-            Coord { x: cx + a * ux - b * vx, y: cy + a * uy - b * vy },
-            Coord { x: cx + a * ux + b * vx, y: cy + a * uy + b * vy },
+            Coord {
+                x: cx + a * ux + b * vx,
+                y: cy + a * uy + b * vy,
+            },
+            Coord {
+                x: cx - a * ux + b * vx,
+                y: cy - a * uy + b * vy,
+            },
+            Coord {
+                x: cx - a * ux - b * vx,
+                y: cy - a * uy - b * vy,
+            },
+            Coord {
+                x: cx + a * ux - b * vx,
+                y: cy + a * uy - b * vy,
+            },
+            Coord {
+                x: cx + a * ux + b * vx,
+                y: cy + a * uy + b * vy,
+            },
         ]),
         vec![],
     )
@@ -64,11 +106,15 @@ pub(crate) fn rect_sdf_max_poly(poly: &Polygon<f64>, rect: &Polygon<f64>) -> f64
     let mut best = polygon_sdf(poly, coords[0].x, coords[0].y);
     for i in 1..n.saturating_sub(1) {
         let v = polygon_sdf(poly, coords[i].x, coords[i].y);
-        if v > best { best = v; }
+        if v > best {
+            best = v;
+        }
         let mx = (coords[i - 1].x + coords[i].x) * 0.5;
         let my = (coords[i - 1].y + coords[i].y) * 0.5;
         let v = polygon_sdf(poly, mx, my);
-        if v > best { best = v; }
+        if v > best {
+            best = v;
+        }
     }
     best
 }
@@ -92,18 +138,26 @@ pub(crate) fn certify_and_adjust(
     if max_sdf <= cert_eps {
         let (a0, b0) = clamp_half_sides_to_ratio(a, b, max_ratio);
         let final_rect = build_rect_from_frame(cx, cy, ux, uy, vx, vy, a0, b0);
-        if rect_sdf_max_poly(poly, &final_rect) > cert_eps * 10.0 { return None; }
+        if rect_sdf_max_poly(poly, &final_rect) > cert_eps * 10.0 {
+            return None;
+        }
         let area = final_rect.unsigned_area();
         return Some((final_rect, area));
     }
     let shrink = max_sdf + cert_eps;
-    if shrink > a.min(b) * cert_max_shrink { return None; }
+    if shrink > a.min(b) * cert_max_shrink {
+        return None;
+    }
     let new_a = a - shrink;
     let new_b = b - shrink;
-    if new_a <= 0.0 || new_b <= 0.0 { return None; }
+    if new_a <= 0.0 || new_b <= 0.0 {
+        return None;
+    }
     let (new_a, new_b) = clamp_half_sides_to_ratio(new_a, new_b, max_ratio);
     let final_rect = build_rect_from_frame(cx, cy, ux, uy, vx, vy, new_a, new_b);
-    if rect_sdf_max_poly(poly, &final_rect) > cert_eps * 10.0 { return None; }
+    if rect_sdf_max_poly(poly, &final_rect) > cert_eps * 10.0 {
+        return None;
+    }
     let area = final_rect.unsigned_area();
     Some((final_rect, area))
 }
@@ -120,12 +174,16 @@ pub(crate) fn best_effort_shrink_to_cover(
     let corners: Vec<(f64, f64)> = rect.exterior().0.iter().map(|c| (c.x, c.y)).collect();
     let frame = rect_local_frame(&corners)?;
     let (cx, cy, ux, uy, vx, vy, a0, b0) = frame;
-    if a0 <= 0.0 || b0 <= 0.0 { return None; }
+    if a0 <= 0.0 || b0 <= 0.0 {
+        return None;
+    }
 
     if max_sdf <= cert_eps {
         let (a, b) = clamp_half_sides_to_ratio(a0, b0, max_ratio);
         let final_rect = build_rect_from_frame(cx, cy, ux, uy, vx, vy, a, b);
-        if rect_sdf_max_poly(poly, &final_rect) > cert_eps { return None; }
+        if rect_sdf_max_poly(poly, &final_rect) > cert_eps {
+            return None;
+        }
         let area = final_rect.unsigned_area();
         return Some((final_rect, area));
     }
@@ -133,11 +191,17 @@ pub(crate) fn best_effort_shrink_to_cover(
     let shrink = max_sdf + cert_eps * 2.0;
     let a = a0 - shrink;
     let b = b0 - shrink;
-    if a <= 0.0 || b <= 0.0 { return None; }
+    if a <= 0.0 || b <= 0.0 {
+        return None;
+    }
     let (a, b) = clamp_half_sides_to_ratio(a, b, max_ratio);
-    if a <= 0.0 || b <= 0.0 { return None; }
+    if a <= 0.0 || b <= 0.0 {
+        return None;
+    }
     let final_rect = build_rect_from_frame(cx, cy, ux, uy, vx, vy, a, b);
-    if rect_sdf_max_poly(poly, &final_rect) > cert_eps { return None; }
+    if rect_sdf_max_poly(poly, &final_rect) > cert_eps {
+        return None;
+    }
     let area = final_rect.unsigned_area();
     Some((final_rect, area))
 }

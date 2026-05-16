@@ -3,9 +3,9 @@
 //! Finds both largest empty rectangle and largest inscribed rectangle
 //! in a single pass for efficiency.
 
-use geo_types::Polygon;
-use crate::shared::Result;
 use super::{LerLirOptions, LerLirResult};
+use crate::shared::Result;
+use geo_types::Polygon;
 
 /// Solve combined LER + LIR using unified angle sweep.
 ///
@@ -15,7 +15,9 @@ pub fn solve_ler_lir_unified(
     _obstacles: &[Polygon<f64>],
     _options: &LerLirOptions,
 ) -> Result<LerLirResult> {
-    Err(crate::shared::LirError::NotSupported("LER+LIR unified not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "LER+LIR unified not yet implemented".to_string(),
+    ))
 }
 
 /// Solve combined LER + LIR using grid-based approach.
@@ -26,7 +28,9 @@ pub fn solve_ler_lir_grid(
     _obstacles: &[Polygon<f64>],
     _options: &LerLirOptions,
 ) -> Result<LerLirResult> {
-    Err(crate::shared::LirError::NotSupported("LER+LIR grid not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "LER+LIR grid not yet implemented".to_string(),
+    ))
 }
 
 /// Solve combined LER + LIR axis-aligned using histogram approach.
@@ -37,7 +41,9 @@ pub fn solve_ler_lir_axis_aligned_histogram(
     _obstacles: &[Polygon<f64>],
     _options: &LerLirOptions,
 ) -> Result<LerLirResult> {
-    Err(crate::shared::LirError::NotSupported("LER+LIR axis-aligned histogram not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "LER+LIR axis-aligned histogram not yet implemented".to_string(),
+    ))
 }
 
 #[cfg(test)]

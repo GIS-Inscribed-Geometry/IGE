@@ -5,18 +5,26 @@ const EPS: f64 = 1e-9;
 
 #[derive(Clone, Copy, Debug)]
 pub struct RectObs {
-    pub x0: f64, pub x1: f64,
-    pub y0: f64, pub y1: f64,
+    pub x0: f64,
+    pub x1: f64,
+    pub y0: f64,
+    pub y1: f64,
 }
 
 /// Merge overlapping rects: if two rects overlap in both x and y, their
 /// combined bounding box is equivalent for the sweep-line algorithm.
 /// This reduces k (obstacle count) without any accuracy loss.
 fn merge(obs: &[RectObs]) -> Vec<RectObs> {
-    if obs.len() <= 1 { return obs.to_vec(); }
+    if obs.len() <= 1 {
+        return obs.to_vec();
+    }
 
     let mut sorted: Vec<RectObs> = obs.to_vec();
-    sorted.sort_by(|a, b| a.x0.partial_cmp(&b.x0).unwrap().then(a.y0.partial_cmp(&b.y0).unwrap()));
+    sorted.sort_by(|a, b| {
+        a.x0.partial_cmp(&b.x0)
+            .unwrap()
+            .then(a.y0.partial_cmp(&b.y0).unwrap())
+    });
 
     let mut out: Vec<RectObs> = Vec::new();
     for r in sorted {
@@ -35,10 +43,16 @@ fn merge(obs: &[RectObs]) -> Vec<RectObs> {
 }
 
 pub fn build(inputs: &[Polygon<f64>]) -> Vec<RectObs> {
-    let mut rects: Vec<RectObs> = inputs.iter()
+    let mut rects: Vec<RectObs> = inputs
+        .iter()
         .filter_map(|p| {
             let bb = p.bounding_rect()?;
-            Some(RectObs { x0: bb.min().x, x1: bb.max().x, y0: bb.min().y, y1: bb.max().y })
+            Some(RectObs {
+                x0: bb.min().x,
+                x1: bb.max().x,
+                y0: bb.min().y,
+                y1: bb.max().y,
+            })
         })
         .collect();
     let merged = merge(&rects);
@@ -74,8 +88,18 @@ mod tests {
     #[test]
     fn merge_overlapping() {
         let obs = vec![
-            RectObs { x0: 0., x1: 3., y0: 0., y1: 3. },
-            RectObs { x0: 2., x1: 5., y0: 2., y1: 5. },
+            RectObs {
+                x0: 0.,
+                x1: 3.,
+                y0: 0.,
+                y1: 3.,
+            },
+            RectObs {
+                x0: 2.,
+                x1: 5.,
+                y0: 2.,
+                y1: 5.,
+            },
         ];
         let m = merge(&obs);
         assert_eq!(m.len(), 1);
@@ -88,8 +112,18 @@ mod tests {
     #[test]
     fn merge_non_overlapping() {
         let obs = vec![
-            RectObs { x0: 0., x1: 3., y0: 0., y1: 3. },
-            RectObs { x0: 5., x1: 8., y0: 5., y1: 8. },
+            RectObs {
+                x0: 0.,
+                x1: 3.,
+                y0: 0.,
+                y1: 3.,
+            },
+            RectObs {
+                x0: 5.,
+                x1: 8.,
+                y0: 5.,
+                y1: 8.,
+            },
         ];
         let m = merge(&obs);
         assert_eq!(m.len(), 2);
@@ -98,9 +132,24 @@ mod tests {
     #[test]
     fn merge_chain() {
         let obs = vec![
-            RectObs { x0: 0., x1: 2., y0: 0., y1: 2. },
-            RectObs { x0: 1., x1: 3., y0: 1., y1: 3. },
-            RectObs { x0: 2., x1: 4., y0: 2., y1: 4. },
+            RectObs {
+                x0: 0.,
+                x1: 2.,
+                y0: 0.,
+                y1: 2.,
+            },
+            RectObs {
+                x0: 1.,
+                x1: 3.,
+                y0: 1.,
+                y1: 3.,
+            },
+            RectObs {
+                x0: 2.,
+                x1: 4.,
+                y0: 2.,
+                y1: 4.,
+            },
         ];
         let m = merge(&obs);
         assert_eq!(m.len(), 1);

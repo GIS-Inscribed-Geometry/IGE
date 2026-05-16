@@ -20,15 +20,21 @@ mod visualize_modules;
 use rayon::prelude::*;
 use std::fs;
 
-use crate::visualize_modules::cli::{AxisCliSolver, PointCliSolver, CliConfig, algo_name, simd_status};
-use crate::visualize_modules::io::{load_polygons_from, load_linestrings_clustered, line_cluster_bbox, load_polygons_clustered, polygon_cluster_bbox};
-use crate::visualize_modules::render::{
-    gen_mic_card, gen_svg_card,
+use crate::visualize_modules::cli::{
+    algo_name, simd_status, AxisCliSolver, CliConfig, PointCliSolver,
+};
+use crate::visualize_modules::io::{
+    line_cluster_bbox, load_linestrings_clustered, load_polygons_clustered, load_polygons_from,
+    polygon_cluster_bbox,
 };
 use crate::visualize_modules::render::ComplexityMetrics;
+use crate::visualize_modules::render::{gen_mic_card, gen_svg_card};
 use crate::visualize_modules::shapes::{make_l_shape, make_u_shape, make_zigzag};
-use ige_core::solvers::ler::LerOptions;
-use ige_core::{solve_ler_axis_aligned_points_sweep, solve_ler_axis_aligned_points_dc};
+use ige_core::solvers::ler::{solve_ler_oriented, LerOptions};
+use ige_core::{
+    solve_ler_axis_aligned_mixed_sweep, solve_ler_axis_aligned_points_dc,
+    solve_ler_axis_aligned_points_sweep,
+};
 fn bbox_polygon(x0: f64, y0: f64, x1: f64, y1: f64) -> geo_types::Polygon<f64> {
     geo_types::Polygon::new(
         geo_types::LineString::from(vec![
@@ -42,41 +48,63 @@ fn bbox_polygon(x0: f64, y0: f64, x1: f64, y1: f64) -> geo_types::Polygon<f64> {
     )
 }
 
-use ige_core::solvers::lir::axis_aligned::{solve_axis_exact, solve_vertex_grid};
-use ige_core::solvers::lir::oriented::{solve_lir_oriented, LirOrientedOptions};
-use ige_core::solvers::mic::{maximum_inscribed_circle, MicEngine, MicOptions, MicUsedEngine, RobustMode};
-use ige_core::{solve_axis_rect_grid_with_backend, AxisAlignedOptions, MaskBackend};
 use geo::algorithm::area::Area;
 use geo_types::LineString;
-
+use ige_core::solvers::lir::axis_aligned::{solve_axis_exact, solve_vertex_grid};
+use ige_core::solvers::lir::oriented::{solve_lir_oriented, LirOrientedOptions};
+use ige_core::solvers::mic::{
+    maximum_inscribed_circle, MicEngine, MicOptions, MicUsedEngine, RobustMode,
+};
+use ige_core::{solve_axis_rect_grid_with_backend, AxisAlignedOptions, MaskBackend};
 
 /// Build standard test shapes and merge them with real polygons if needed.
-fn build_polygons(real: Vec<(String, geo_types::Polygon<f64>)>, config: &CliConfig) -> Vec<(String, geo_types::Polygon<f64>)> {
+fn build_polygons(
+    real: Vec<(String, geo_types::Polygon<f64>)>,
+    config: &CliConfig,
+) -> Vec<(String, geo_types::Polygon<f64>)> {
     if config.real_only || config.use_mic_compare {
         return real;
     }
 
     let mut data = vec![
-        ("Square 10x10".into(), geo_types::Polygon::new(
-            geo_types::LineString::from(vec![
-                geo_types::Coord { x: 0.0, y: 0.0 }, geo_types::Coord { x: 10.0, y: 0.0 },
-                geo_types::Coord { x: 10.0, y: 10.0 }, geo_types::Coord { x: 0.0, y: 10.0 },
-                geo_types::Coord { x: 0.0, y: 0.0 },
-            ]), vec![],
-        )),
-        ("Rectangle 20x5".into(), geo_types::Polygon::new(
-            geo_types::LineString::from(vec![
-                geo_types::Coord { x: 0.0, y: 0.0 }, geo_types::Coord { x: 20.0, y: 0.0 },
-                geo_types::Coord { x: 20.0, y: 5.0 }, geo_types::Coord { x: 0.0, y: 5.0 },
-                geo_types::Coord { x: 0.0, y: 0.0 },
-            ]), vec![],
-        )),
-        ("Triangle".into(), geo_types::Polygon::new(
-            geo_types::LineString::from(vec![
-                geo_types::Coord { x: 0.0, y: 0.0 }, geo_types::Coord { x: 10.0, y: 0.0 },
-                geo_types::Coord { x: 5.0, y: 10.0 }, geo_types::Coord { x: 0.0, y: 0.0 },
-            ]), vec![],
-        )),
+        (
+            "Square 10x10".into(),
+            geo_types::Polygon::new(
+                geo_types::LineString::from(vec![
+                    geo_types::Coord { x: 0.0, y: 0.0 },
+                    geo_types::Coord { x: 10.0, y: 0.0 },
+                    geo_types::Coord { x: 10.0, y: 10.0 },
+                    geo_types::Coord { x: 0.0, y: 10.0 },
+                    geo_types::Coord { x: 0.0, y: 0.0 },
+                ]),
+                vec![],
+            ),
+        ),
+        (
+            "Rectangle 20x5".into(),
+            geo_types::Polygon::new(
+                geo_types::LineString::from(vec![
+                    geo_types::Coord { x: 0.0, y: 0.0 },
+                    geo_types::Coord { x: 20.0, y: 0.0 },
+                    geo_types::Coord { x: 20.0, y: 5.0 },
+                    geo_types::Coord { x: 0.0, y: 5.0 },
+                    geo_types::Coord { x: 0.0, y: 0.0 },
+                ]),
+                vec![],
+            ),
+        ),
+        (
+            "Triangle".into(),
+            geo_types::Polygon::new(
+                geo_types::LineString::from(vec![
+                    geo_types::Coord { x: 0.0, y: 0.0 },
+                    geo_types::Coord { x: 10.0, y: 0.0 },
+                    geo_types::Coord { x: 5.0, y: 10.0 },
+                    geo_types::Coord { x: 0.0, y: 0.0 },
+                ]),
+                vec![],
+            ),
+        ),
         ("L-Shape".into(), make_l_shape(5.0, 5.0, 5.0)),
         ("U-Shape".into(), make_u_shape(5.0, 5.0, 5.0)),
         ("Zigzag".into(), make_zigzag(5.0, 5.0, 5.0)),
@@ -94,20 +122,105 @@ fn solve_polygon(
     mask_backend: MaskBackend,
     obstacles: &[ige_core::ObstacleInput],
 ) -> (Option<geo_types::Polygon<f64>>, f64, f64, bool) {
-    if config.use_ler {
+    if config.use_ler_oriented {
+        // Convert all obstacle types (points, lines, polygons) to polygons
+        // so the oriented LER can handle them uniformly.
+        let obs_polys: Vec<geo_types::Polygon<f64>> = obstacles
+            .iter()
+            .filter_map(|o| match o {
+                ige_core::ObstacleInput::Polygon(p) => Some(p.clone()),
+                ige_core::ObstacleInput::Point(c) => {
+                    let s = 0.02;
+                    Some(geo_types::Polygon::new(
+                        geo_types::LineString::from(vec![
+                            geo_types::Coord {
+                                x: c.x - s,
+                                y: c.y - s,
+                            },
+                            geo_types::Coord {
+                                x: c.x + s,
+                                y: c.y - s,
+                            },
+                            geo_types::Coord {
+                                x: c.x + s,
+                                y: c.y + s,
+                            },
+                            geo_types::Coord {
+                                x: c.x - s,
+                                y: c.y + s,
+                            },
+                            geo_types::Coord {
+                                x: c.x - s,
+                                y: c.y - s,
+                            },
+                        ]),
+                        vec![],
+                    ))
+                }
+                ige_core::ObstacleInput::Line(ls) => {
+                    let half = 0.01;
+                    let pts: Vec<_> = ls.coords().collect();
+                    if pts.len() >= 2 {
+                        let (ax, ay) = (pts[0].x, pts[0].y);
+                        let (bx, by) = (pts[1].x, pts[1].y);
+                        let x0 = ax.min(bx) - half;
+                        let x1 = ax.max(bx) + half;
+                        let y0 = ay.min(by) - half;
+                        let y1 = ay.max(by) + half;
+                        Some(geo_types::Polygon::new(
+                            geo_types::LineString::from(vec![
+                                geo_types::Coord { x: x0, y: y0 },
+                                geo_types::Coord { x: x1, y: y0 },
+                                geo_types::Coord { x: x1, y: y1 },
+                                geo_types::Coord { x: x0, y: y1 },
+                                geo_types::Coord { x: x0, y: y0 },
+                            ]),
+                            vec![],
+                        ))
+                    } else {
+                        None
+                    }
+                }
+            })
+            .collect();
+        match solve_ler_oriented(poly, &obs_polys, &LerOptions::default()) {
+            Ok(r) => (r.rect_polygon, r.area, r.angle_deg, r.best_effort),
+            Err(_) => (None, 0.0, 0.0, false),
+        }
+    } else if config.use_ler {
+        // Route explicitly requested solver
+        if config.point_solver == PointCliSolver::Sweep {
+            match ige_core::solve_ler_axis_aligned_mixed_sweep(
+                poly,
+                &obstacles,
+                &LerOptions::default(),
+            ) {
+                Ok(r) => return (r.rect_polygon, r.area, r.angle_deg, r.best_effort),
+                Err(_) => return (None, 0.0, 0.0, false),
+            }
+        }
+
         // Use planar or DC point solver if flag is set and only points are active
-        if config.obstacle_flags.points && !config.obstacle_flags.lines && !config.obstacle_flags.polygons
-            && (config.point_solver == PointCliSolver::Planar || config.point_solver == PointCliSolver::Dc)
+        if config.obstacle_flags.points
+            && !config.obstacle_flags.lines
+            && !config.obstacle_flags.polygons
+            && (config.point_solver == PointCliSolver::Planar
+                || config.point_solver == PointCliSolver::Dc)
         {
-            let pts: Vec<geo_types::Coord<f64>> = obstacles.iter()
+            let pts: Vec<geo_types::Coord<f64>> = obstacles
+                .iter()
                 .filter_map(|o| match o {
                     ige_core::ObstacleInput::Point(c) => Some(*c),
                     _ => None,
                 })
                 .collect();
             let result = match config.point_solver {
-                PointCliSolver::Planar => solve_ler_axis_aligned_points_sweep(poly, &pts, &LerOptions::default()),
-                PointCliSolver::Dc => solve_ler_axis_aligned_points_dc(poly, &pts, &LerOptions::default()),
+                PointCliSolver::Planar => {
+                    solve_ler_axis_aligned_points_sweep(poly, &pts, &LerOptions::default())
+                }
+                PointCliSolver::Dc => {
+                    solve_ler_axis_aligned_points_dc(poly, &pts, &LerOptions::default())
+                }
                 _ => unreachable!(),
             };
             match result {
@@ -123,7 +236,14 @@ fn solve_polygon(
             Ok(r) => (r.rect_polygon, r.area, r.angle_deg, r.best_effort),
             Err(_) => (None, 0.0, 0.0, false),
         }
-    } else if config.use_parallel || config.use_sa || config.use_bootstrap_seeds || config.use_pca_axes || config.use_early_stopping || config.use_edge_anchored || config.use_gradient_expand {
+    } else if config.use_parallel
+        || config.use_sa
+        || config.use_bootstrap_seeds
+        || config.use_pca_axes
+        || config.use_early_stopping
+        || config.use_edge_anchored
+        || config.use_gradient_expand
+    {
         let mut opts = LirOrientedOptions::default();
         opts.use_parallel_field = config.use_parallel;
         opts.use_simulated_annealing = config.use_sa;
@@ -144,35 +264,58 @@ fn solve_polygon(
         let opts = AxisAlignedOptions::default();
         match config.axis_solver {
             AxisCliSolver::Vertex => {
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve_vertex_grid(poly, &opts))) {
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    solve_vertex_grid(poly, &opts)
+                })) {
                     Ok(Some(rect)) => {
                         let area = rect.area();
-                        (Some(crate::visualize_modules::render::rect_to_polygon(rect)), area, 0.0, false)
+                        (
+                            Some(crate::visualize_modules::render::rect_to_polygon(rect)),
+                            area,
+                            0.0,
+                            false,
+                        )
                     }
                     _ => (None, 0.0, 0.0, false),
                 }
             }
             AxisCliSolver::Exact => {
-                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve_axis_exact(poly, &opts))) {
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    solve_axis_exact(poly, &opts)
+                })) {
                     Ok(Some(rect)) => {
                         let area = rect.area();
-                        (Some(crate::visualize_modules::render::rect_to_polygon(rect)), area, 0.0, false)
+                        (
+                            Some(crate::visualize_modules::render::rect_to_polygon(rect)),
+                            area,
+                            0.0,
+                            false,
+                        )
                     }
                     _ => (None, 0.0, 0.0, false),
                 }
             }
             AxisCliSolver::Grid => {
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    solve_axis_rect_grid_with_backend(poly, opts.max_grid, opts.max_ratio, opts.min_ratio, mask_backend)
+                    solve_axis_rect_grid_with_backend(
+                        poly,
+                        opts.max_grid,
+                        opts.max_ratio,
+                        opts.min_ratio,
+                        mask_backend,
+                    )
                 })) {
                     Ok(Some((x0, y0, x1, y1, _))) => {
-                        let rp = geo_types::Polygon::new(geo_types::LineString::from(vec![
-                            geo_types::Coord { x: x0, y: y0 },
-                            geo_types::Coord { x: x1, y: y0 },
-                            geo_types::Coord { x: x1, y: y1 },
-                            geo_types::Coord { x: x0, y: y1 },
-                            geo_types::Coord { x: x0, y: y0 },
-                        ]), vec![]);
+                        let rp = geo_types::Polygon::new(
+                            geo_types::LineString::from(vec![
+                                geo_types::Coord { x: x0, y: y0 },
+                                geo_types::Coord { x: x1, y: y0 },
+                                geo_types::Coord { x: x1, y: y1 },
+                                geo_types::Coord { x: x0, y: y1 },
+                                geo_types::Coord { x: x0, y: y0 },
+                            ]),
+                            vec![],
+                        );
                         let area = (x1 - x0) * (y1 - y0);
                         (Some(rp), area, 0.0, false)
                     }
@@ -189,27 +332,39 @@ fn build_html_lir(
     config: &CliConfig,
     wall_total_ms: f64,
 ) -> String {
-    let success = results.iter().filter(|(_, _, ra, _, _, _, _)| *ra > 0.0).count();
+    let success = results
+        .iter()
+        .filter(|(_, _, ra, _, _, _, _)| *ra > 0.0)
+        .count();
     let failed = results.len() - success;
-    let total_poly_area: f64 = results.iter()
+    let total_poly_area: f64 = results
+        .iter()
         .map(|(idx, _card, _ra, _ang, _be, _ms, _fill_pct)| all_polygons[*idx].1.unsigned_area())
         .sum();
     let total_rect_area: f64 = results.iter().map(|(_, _, ra, _, _, _, _)| ra).sum();
 
-    let perf = crate::visualize_modules::stats::LirStats::from_iter(
-        results.iter()
-            .map(|(idx, _card, ra, _ang, _be, _ms, _fill_pct)| (*ra, all_polygons[*idx].1.unsigned_area()))
-    );
+    let perf = crate::visualize_modules::stats::LirStats::from_iter(results.iter().map(
+        |(idx, _card, ra, _ang, _be, _ms, _fill_pct)| (*ra, all_polygons[*idx].1.unsigned_area()),
+    ));
     let fill = perf.overall_fill_pct();
     let avg = wall_total_ms / all_polygons.len() as f64;
 
-    let cards: String = results.iter()
+    let cards: String = results
+        .iter()
         .map(|(_, card, _, _, _, _, _)| card.as_str())
         .collect();
 
-    let title = if config.use_ler { "Largest Empty Rectangle" } else { "Largest Inscribed Rectangle" };
+    let title = if config.use_ler || config.use_ler_oriented {
+        "Largest Empty Rectangle"
+    } else {
+        "Largest Inscribed Rectangle"
+    };
 
-    let area_label = if config.use_ler { "Empty area" } else { "Inscribed area" };
+    let area_label = if config.use_ler || config.use_ler_oriented {
+        "Empty area"
+    } else {
+        "Inscribed area"
+    };
 
     format!(
         r#"<!DOCTYPE html>
@@ -228,7 +383,7 @@ fn build_html_lir(
 </div>
 <div class="grid">{cards}</div>
 </body></html>"#,
-         style = crate::visualize_modules::render::styles(),
+        style = crate::visualize_modules::render::styles(),
         title = title,
         algo = algo_name(config),
         n = all_polygons.len(),
@@ -271,7 +426,10 @@ fn main() {
     let has_any_synth = !clustered_lines.is_empty() || !clustered_polys.is_empty();
 
     // Build obstacle inputs for a whole cluster
-    fn build_cluster_obs(lines: &[LineString<f64>], polys: &[geo_types::Polygon<f64>]) -> Vec<ige_core::ObstacleInput> {
+    fn build_cluster_obs(
+        lines: &[LineString<f64>],
+        polys: &[geo_types::Polygon<f64>],
+    ) -> Vec<ige_core::ObstacleInput> {
         let mut out = Vec::new();
         for ls in lines {
             let pts: Vec<geo_types::Coord<f64>> = ls.coords().copied().collect();
@@ -296,7 +454,10 @@ fn main() {
         if flags.lines {
             for (cid, lines) in &clustered_lines {
                 if let Some((x0, y0, x1, y1)) = line_cluster_bbox(lines) {
-                    all_polygons.push((format!("Line Cluster #{}", cid), bbox_polygon(x0, y0, x1, y1)));
+                    all_polygons.push((
+                        format!("Line Cluster #{}", cid),
+                        bbox_polygon(x0, y0, x1, y1),
+                    ));
                     cluster_obstacle_map.push(build_cluster_obs(lines, &[]));
                     render_map.push(vec![]);
                     is_bbox_map.push(true);
@@ -307,7 +468,10 @@ fn main() {
         if flags.polygons {
             for (cid, polys) in &clustered_polys {
                 if let Some((x0, y0, x1, y1)) = polygon_cluster_bbox(polys) {
-                    all_polygons.push((format!("Poly Cluster #{}", cid), bbox_polygon(x0, y0, x1, y1)));
+                    all_polygons.push((
+                        format!("Poly Cluster #{}", cid),
+                        bbox_polygon(x0, y0, x1, y1),
+                    ));
                     cluster_obstacle_map.push(build_cluster_obs(&[], polys));
                     render_map.push(vec![]);
                     is_bbox_map.push(true);
@@ -329,8 +493,10 @@ fn main() {
 
         if with_points_only || mixed_with_points {
             use geo::BoundingRect;
-            let poly_bboxes: Vec<Option<geo_types::Rect<f64>>> = all_polygons.iter()
-                .map(|(_, p)| p.bounding_rect()).collect();
+            let poly_bboxes: Vec<Option<geo_types::Rect<f64>>> = all_polygons
+                .iter()
+                .map(|(_, p)| p.bounding_rect())
+                .collect();
 
             for (idx, (_, poly)) in all_polygons.iter().enumerate() {
                 let pbox = &poly_bboxes[idx];
@@ -350,19 +516,29 @@ fn main() {
                     for (_, lines) in &clustered_lines {
                         for ls in lines {
                             if let Some(ref pb) = pbox {
-                                let mut lx0 = f64::MAX; let mut lx1 = f64::MIN;
-                                let mut ly0 = f64::MAX; let mut ly1 = f64::MIN;
+                                let mut lx0 = f64::MAX;
+                                let mut lx1 = f64::MIN;
+                                let mut ly0 = f64::MAX;
+                                let mut ly1 = f64::MIN;
                                 for c in ls.coords() {
-                                    lx0 = lx0.min(c.x); lx1 = lx1.max(c.x);
-                                    ly0 = ly0.min(c.y); ly1 = ly1.max(c.y);
+                                    lx0 = lx0.min(c.x);
+                                    lx1 = lx1.max(c.x);
+                                    ly0 = ly0.min(c.y);
+                                    ly1 = ly1.max(c.y);
                                 }
-                                if lx1 > pb.min().x && lx0 < pb.max().x
-                                    && ly1 > pb.min().y && ly0 < pb.max().y {
-                                    let pts: Vec<geo_types::Coord<f64>> = ls.coords().copied().collect();
+                                if lx1 > pb.min().x
+                                    && lx0 < pb.max().x
+                                    && ly1 > pb.min().y
+                                    && ly0 < pb.max().y
+                                {
+                                    let pts: Vec<geo_types::Coord<f64>> =
+                                        ls.coords().copied().collect();
                                     for pair in pts.windows(2) {
-                                        cluster_obstacle_map[idx].push(ige_core::ObstacleInput::Line(
-                                            geo_types::LineString::from(vec![pair[0], pair[1]])
-                                        ));
+                                        cluster_obstacle_map[idx].push(
+                                            ige_core::ObstacleInput::Line(
+                                                geo_types::LineString::from(vec![pair[0], pair[1]]),
+                                            ),
+                                        );
                                     }
                                 }
                             }
@@ -374,9 +550,13 @@ fn main() {
                         for p in polys {
                             if let Some(ref pb) = pbox {
                                 if let Some(bb) = p.bounding_rect() {
-                                    if bb.max().x > pb.min().x && bb.min().x < pb.max().x
-                                        && bb.max().y > pb.min().y && bb.min().y < pb.max().y {
-                                        cluster_obstacle_map[idx].push(ige_core::ObstacleInput::Polygon(p.clone()));
+                                    if bb.max().x > pb.min().x
+                                        && bb.min().x < pb.max().x
+                                        && bb.max().y > pb.min().y
+                                        && bb.min().y < pb.max().y
+                                    {
+                                        cluster_obstacle_map[idx]
+                                            .push(ige_core::ObstacleInput::Polygon(p.clone()));
                                     }
                                 }
                             }
@@ -397,7 +577,10 @@ fn main() {
     eprintln!("Algorithm: {algo}");
     eprintln!("Total shapes: {}", all_polygons.len());
 
-    let out_dir = std::env::current_dir().unwrap().join("target").join("ige_output");
+    let out_dir = std::env::current_dir()
+        .unwrap()
+        .join("target")
+        .join("ige_output");
     std::fs::create_dir_all(&out_dir).unwrap();
 
     if config.use_mic_compare {
@@ -412,17 +595,33 @@ fn main() {
         .enumerate()
         .map(|(idx, (id, poly))| {
             let start = std::time::Instant::now();
-            let obs_solver = &cluster_obstacle_map[idx];  // solver-only (points)
-            let obs_render = &render_map[idx];             // visual-only (lines/polygons)
-            // Combined for SVG
-            let mut all_obs: Vec<ige_core::ObstacleInput> = Vec::with_capacity(obs_solver.len() + obs_render.len());
+            let obs_solver = &cluster_obstacle_map[idx]; // solver-only (points)
+            let obs_render = &render_map[idx]; // visual-only (lines/polygons)
+                                               // Combined for SVG
+            let mut all_obs: Vec<ige_core::ObstacleInput> =
+                Vec::with_capacity(obs_solver.len() + obs_render.len());
             all_obs.extend(obs_solver.iter().cloned());
             all_obs.extend(obs_render.iter().cloned());
             let (rp, ra, ang, be) = solve_polygon(poly, &config, config.mask_backend, obs_solver);
             let ms = start.elapsed().as_secs_f64() * 1000.0;
             let poly_area = poly.unsigned_area();
-            let fill_pct = if poly_area > 0.0 { ra / poly_area * 100.0 } else { 0.0 };
-            let card = gen_svg_card(id, poly, rp.as_ref(), ra, ang, be, ms, config.use_ler, &all_obs, is_bbox_map[idx]);
+            let fill_pct = if poly_area > 0.0 {
+                ra / poly_area * 100.0
+            } else {
+                0.0
+            };
+            let card = gen_svg_card(
+                id,
+                poly,
+                rp.as_ref(),
+                ra,
+                ang,
+                be,
+                ms,
+                config.use_ler || config.use_ler_oriented,
+                &all_obs,
+                is_bbox_map[idx],
+            );
             (idx, card, ra, ang, be, ms, fill_pct)
         })
         .collect();
@@ -431,10 +630,11 @@ fn main() {
     results.sort_by_key(|(idx, ..)| *idx);
 
     if config.use_json {
-        let perf = crate::visualize_modules::stats::LirStats::from_iter(
-            results.iter()
-                .map(|(idx, _card, ra, _ang, _be, _ms, _fill_pct)| (*ra, all_polygons[*idx].1.unsigned_area()))
-        );
+        let perf = crate::visualize_modules::stats::LirStats::from_iter(results.iter().map(
+            |(idx, _card, ra, _ang, _be, _ms, _fill_pct)| {
+                (*ra, all_polygons[*idx].1.unsigned_area())
+            },
+        ));
         let json = serde_json::json!({
             "success": results.iter().filter(|(_, _, ra, _, _, _, _)| *ra > 0.0).count(),
             "total": all_polygons.len(),
@@ -447,18 +647,30 @@ fn main() {
             },
         });
         println!("JSON: {}", serde_json::to_string_pretty(&json).unwrap());
-        println!("Wall time: {:.2}ms  (avg {:.2}ms/shape)", wall_total_ms, wall_total_ms / all_polygons.len() as f64);
+        println!(
+            "Wall time: {:.2}ms  (avg {:.2}ms/shape)",
+            wall_total_ms,
+            wall_total_ms / all_polygons.len() as f64
+        );
     } else {
         let path = out_dir.join("index.html");
         let html = build_html_lir(&all_polygons, &results, &config, wall_total_ms);
         fs::write(&path, &html).unwrap();
         println!("Generated: {}  ({algo})", path.display());
-        println!("Wall time: {:.2}ms  (avg {:.2}ms/shape)", wall_total_ms, wall_total_ms / all_polygons.len() as f64);
+        println!(
+            "Wall time: {:.2}ms  (avg {:.2}ms/shape)",
+            wall_total_ms,
+            wall_total_ms / all_polygons.len() as f64
+        );
     }
 }
 
 /// Run MIC comparison mode.
-fn run_mic_mode(polygons: &[(String, geo_types::Polygon<f64>)], config: &CliConfig, out_dir: &std::path::Path) {
+fn run_mic_mode(
+    polygons: &[(String, geo_types::Polygon<f64>)],
+    config: &CliConfig,
+    out_dir: &std::path::Path,
+) {
     let exact_opts = MicOptions {
         engine: MicEngine::ExactOnly,
         robust_mode: RobustMode::Filtered,
@@ -470,7 +682,17 @@ fn run_mic_mode(polygons: &[(String, geo_types::Polygon<f64>)], config: &CliConf
 
     let wall_start = std::time::Instant::now();
 
-    let mut results: Vec<(usize, String, Option<f64>, Option<f64>, f64, f64, usize, ComplexityMetrics, MicUsedEngine)> = polygons
+    let mut results: Vec<(
+        usize,
+        String,
+        Option<f64>,
+        Option<f64>,
+        f64,
+        f64,
+        usize,
+        ComplexityMetrics,
+        MicUsedEngine,
+    )> = polygons
         .par_iter()
         .enumerate()
         .map(|(idx, (id, poly))| {
@@ -487,7 +709,10 @@ fn run_mic_mode(polygons: &[(String, geo_types::Polygon<f64>)], config: &CliConf
             let exact_radius = exact.as_ref().ok().map(|r| r.radius);
             let geos_radius = geos.as_ref().ok().map(|r| r.radius);
             let candidate_count = exact.as_ref().map(|r| r.candidate_count).unwrap_or(0);
-            let used_engine = exact.as_ref().map(|r| r.used_engine).unwrap_or(MicUsedEngine::Exact);
+            let used_engine = exact
+                .as_ref()
+                .map(|r| r.used_engine)
+                .unwrap_or(MicUsedEngine::Exact);
             let complexity = crate::visualize_modules::render::compute_complexity(poly);
 
             let card = gen_mic_card(
@@ -503,7 +728,17 @@ fn run_mic_mode(polygons: &[(String, geo_types::Polygon<f64>)], config: &CliConf
                 used_engine,
                 &complexity,
             );
-            (idx, card, exact_radius, geos_radius, exact_ms, geos_ms, candidate_count, complexity, used_engine)
+            (
+                idx,
+                card,
+                exact_radius,
+                geos_radius,
+                exact_ms,
+                geos_ms,
+                candidate_count,
+                complexity,
+                used_engine,
+            )
         })
         .collect();
 
@@ -514,8 +749,27 @@ fn run_mic_mode(polygons: &[(String, geo_types::Polygon<f64>)], config: &CliConf
 
     if config.use_json {
         let mut stats = crate::visualize_modules::stats::MicStats::new();
-        for (idx, _card, exact_r, geos_r, exact_ms, geos_ms, _candidate_count, _complexity, _used_engine) in &results {
-            stats.update(*idx, "", *exact_r, *geos_r, *exact_ms, *geos_ms, &polygon_ids);
+        for (
+            idx,
+            _card,
+            exact_r,
+            geos_r,
+            exact_ms,
+            geos_ms,
+            _candidate_count,
+            _complexity,
+            _used_engine,
+        ) in &results
+        {
+            stats.update(
+                *idx,
+                "",
+                *exact_r,
+                *geos_r,
+                *exact_ms,
+                *geos_ms,
+                &polygon_ids,
+            );
         }
         let summary = stats.finalize(results.len());
         let json = serde_json::json!({
@@ -534,28 +788,55 @@ fn run_mic_mode(polygons: &[(String, geo_types::Polygon<f64>)], config: &CliConf
             "wall_ms": wall_total_ms,
         });
         println!("{}", serde_json::to_string(&json).unwrap());
-        println!("Wall time: {:.2}ms  (avg {:.2}ms/shape)", wall_total_ms, wall_total_ms / polygons.len() as f64);
+        println!(
+            "Wall time: {:.2}ms  (avg {:.2}ms/shape)",
+            wall_total_ms,
+            wall_total_ms / polygons.len() as f64
+        );
         return;
     }
 
     let mut stats = crate::visualize_modules::stats::MicStats::new();
     let mut cards = String::new();
 
-    for (idx, card, exact_r, geos_r, exact_ms, geos_ms, _candidate_count, _complexity, _used_engine) in &results {
+    for (
+        idx,
+        card,
+        exact_r,
+        geos_r,
+        exact_ms,
+        geos_ms,
+        _candidate_count,
+        _complexity,
+        _used_engine,
+    ) in &results
+    {
         cards.push_str(card);
-        stats.update(*idx, card, *exact_r, *geos_r, *exact_ms, *geos_ms, &polygon_ids);
+        stats.update(
+            *idx,
+            card,
+            *exact_r,
+            *geos_r,
+            *exact_ms,
+            *geos_ms,
+            &polygon_ids,
+        );
     }
 
     let summary = stats.finalize(results.len());
     let speed_ratio = summary.speed_ratio();
     let speed_label = if speed_ratio <= 1.0 {
-        format!("{:.1}x <span class=speed-label>faster</span>", 1.0 / speed_ratio.max(1e-12))
+        format!(
+            "{:.1}x <span class=speed-label>faster</span>",
+            1.0 / speed_ratio.max(1e-12)
+        )
     } else {
         format!("{:.1}x <span class=speed-label>slower</span>", speed_ratio)
     };
 
     let path = out_dir.join("index.html");
-    let html = format!(r#"<!DOCTYPE html>
+    let html = format!(
+        r#"<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <title>IGE Visual Preview — MIC compare</title>
 <style>
@@ -586,6 +867,14 @@ fn run_mic_mode(polygons: &[(String, geo_types::Polygon<f64>)], config: &CliConf
         simd = simd_status(),
     );
     fs::write(&path, &html).unwrap();
-    println!("Generated: {}  (MIC exact vs GEOS{})", path.display(), simd_status());
-    println!("Wall time: {:.2}ms  (avg {:.2}ms/shape)", wall_total_ms, wall_total_ms / polygons.len() as f64);
+    println!(
+        "Generated: {}  (MIC exact vs GEOS{})",
+        path.display(),
+        simd_status()
+    );
+    println!(
+        "Wall time: {:.2}ms  (avg {:.2}ms/shape)",
+        wall_total_ms,
+        wall_total_ms / polygons.len() as f64
+    );
 }

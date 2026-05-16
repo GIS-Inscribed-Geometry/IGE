@@ -1,9 +1,9 @@
 use std::collections::BinaryHeap;
 
-use geo_types::Point;
 use super::super::index::{NearestBoundaryIndex, PipIndex};
 use super::super::input::HostPolygon;
 use super::super::{MicResult, MicUsedEngine};
+use geo_types::Point;
 
 const SQRT2: f64 = std::f64::consts::SQRT_2;
 
@@ -51,7 +51,7 @@ pub fn solve_grid(
     nb: &NearestBoundaryIndex,
     tolerance: f64,
 ) -> Option<MicResult> {
-#[cfg(feature = "tracy")]
+    #[cfg(feature = "tracy")]
     let _span = tracy_client::span!("solve_grid");
     let bounds = host.bounds()?;
     let (min_x, min_y, max_x, max_y) = bounds;
@@ -105,7 +105,13 @@ pub fn solve_grid(
             let distance = dist_sq.sqrt();
             let max_dist = distance + h_size * SQRT2;
 
-            queue.push(GridCell { x: cx, y: cy, h_size, distance, max_dist });
+            queue.push(GridCell {
+                x: cx,
+                y: cy,
+                h_size,
+                distance,
+                max_dist,
+            });
         }
     }
 
@@ -216,7 +222,12 @@ pub fn solve_grid(
         return None;
     }
 
-    let support_segments = nb.supporting_segments(farthest_x, farthest_y, farthest_dist_sq, farthest_dist_sq.max(1.0) * 1e-10);
+    let support_segments = nb.supporting_segments(
+        farthest_x,
+        farthest_y,
+        farthest_dist_sq,
+        farthest_dist_sq.max(1.0) * 1e-10,
+    );
 
     Some(MicResult {
         center: Point::new(farthest_x, farthest_y),
@@ -229,7 +240,9 @@ pub fn solve_grid(
     })
 }
 fn compute_max_iterations(host: &HostPolygon, tolerance: f64) -> usize {
-    let Some(bounds) = host.bounds() else { return 10000; };
+    let Some(bounds) = host.bounds() else {
+        return 10000;
+    };
     let (min_x, min_y, max_x, max_y) = bounds;
     let width = max_x - min_x;
     let height = max_y - min_y;

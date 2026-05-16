@@ -1,5 +1,5 @@
-use geos::{Geom, Geometry};
 use geo_types::Polygon;
+use geos::{Geom, Geometry};
 
 use super::super::index::NearestBoundaryIndex;
 use super::super::input::{HostPolygon, SegmentIndex};
@@ -10,7 +10,9 @@ fn polygon_to_wkt(poly: &Polygon<f64>) -> String {
     let ext = poly.exterior();
     out.push('(');
     for (idx, coord) in ext.0.iter().enumerate() {
-        if idx > 0 { out.push_str(", "); }
+        if idx > 0 {
+            out.push_str(", ");
+        }
         out.push_str(&format!("{} {}", coord.x, coord.y));
     }
     out.push(')');
@@ -18,7 +20,9 @@ fn polygon_to_wkt(poly: &Polygon<f64>) -> String {
         out.push_str(", ");
         out.push('(');
         for (idx, coord) in hole.0.iter().enumerate() {
-            if idx > 0 { out.push_str(", "); }
+            if idx > 0 {
+                out.push_str(", ");
+            }
             out.push_str(&format!("{} {}", coord.x, coord.y));
         }
         out.push(')');
@@ -32,7 +36,7 @@ pub fn solve_with_geos(
     opts: &MicOptions,
     existing_seg_index: Option<&SegmentIndex>,
 ) -> std::result::Result<MicResult, MicError> {
-    // Use ORIGINAL polygon (not normalized) for GEOS to avoid the bug where 
+    // Use ORIGINAL polygon (not normalized) for GEOS to avoid the bug where
     // normalization breaks certain polygons and causes wrong MIC results
     let poly_wkt = polygon_to_wkt(&host.original_polygon);
     let geom = Geometry::new_from_wkt(&poly_wkt)
@@ -63,8 +67,7 @@ pub fn solve_with_geos(
     });
     let radius_sq = line_sq.unwrap_or(nearest_sq).min(nearest_sq).max(0.0);
     let support_eps = radius_sq.max(1.0) * 1e-10;
-    let support_segments =
-        nb_index.supporting_segments(center.0, center.1, radius_sq, support_eps);
+    let support_segments = nb_index.supporting_segments(center.0, center.1, radius_sq, support_eps);
 
     Ok(MicResult {
         center: geo_types::Point::new(center.0, center.1),
@@ -157,14 +160,22 @@ fn parse_wkt_coord_list(wkt: &str) -> Result<Vec<(f64, f64)>, MicError> {
         let mut parts = token.split_whitespace();
         let x = parts
             .next()
-            .ok_or_else(|| MicError::UnsupportedGeosOutput(format!("missing x coordinate in: {wkt}")))?
+            .ok_or_else(|| {
+                MicError::UnsupportedGeosOutput(format!("missing x coordinate in: {wkt}"))
+            })?
             .parse::<f64>()
-            .map_err(|err| MicError::UnsupportedGeosOutput(format!("invalid x coordinate: {err}")))?;
+            .map_err(|err| {
+                MicError::UnsupportedGeosOutput(format!("invalid x coordinate: {err}"))
+            })?;
         let y = parts
             .next()
-            .ok_or_else(|| MicError::UnsupportedGeosOutput(format!("missing y coordinate in: {wkt}")))?
+            .ok_or_else(|| {
+                MicError::UnsupportedGeosOutput(format!("missing y coordinate in: {wkt}"))
+            })?
             .parse::<f64>()
-            .map_err(|err| MicError::UnsupportedGeosOutput(format!("invalid y coordinate: {err}")))?;
+            .map_err(|err| {
+                MicError::UnsupportedGeosOutput(format!("invalid y coordinate: {err}"))
+            })?;
         out.push((x, y));
     }
     Ok(out)

@@ -2,15 +2,19 @@ const EPS: f64 = 1e-9;
 
 #[derive(Clone, Copy, Debug)]
 pub struct LineObs {
-    pub ax: f64, pub ay: f64,
-    pub bx: f64, pub by: f64,
+    pub ax: f64,
+    pub ay: f64,
+    pub bx: f64,
+    pub by: f64,
 }
 
 /// Compute the y-range of the segment that overlaps x-span [x0, x1].
 fn y_overlap(seg: &LineObs, x0: f64, x1: f64) -> Option<(f64, f64)> {
     let sx0 = seg.ax.min(seg.bx);
     let sx1 = seg.ax.max(seg.bx);
-    if sx1 < x0 + EPS || sx0 > x1 - EPS { return None; }
+    if sx1 < x0 + EPS || sx0 > x1 - EPS {
+        return None;
+    }
 
     if (seg.ax - seg.bx).abs() < EPS {
         return Some((seg.ay.min(seg.by), seg.ay.max(seg.by)));
@@ -18,7 +22,9 @@ fn y_overlap(seg: &LineObs, x0: f64, x1: f64) -> Option<(f64, f64)> {
 
     let clamp_x0 = x0.max(sx0);
     let clamp_x1 = x1.min(sx1);
-    if clamp_x1 <= clamp_x0 + EPS { return None; }
+    if clamp_x1 <= clamp_x0 + EPS {
+        return None;
+    }
 
     let slope = (seg.by - seg.ay) / (seg.bx - seg.ax);
     let y_at_l = seg.ay + slope * (clamp_x0 - seg.ax);
@@ -29,14 +35,26 @@ fn y_overlap(seg: &LineObs, x0: f64, x1: f64) -> Option<(f64, f64)> {
 }
 
 pub fn build(inputs: &[(f64, f64, f64, f64)]) -> Vec<LineObs> {
-    inputs.iter().map(|&(ax, ay, bx, by)| LineObs { ax, ay, bx, by }).collect()
+    inputs
+        .iter()
+        .map(|&(ax, ay, bx, by)| LineObs { ax, ay, bx, by })
+        .collect()
 }
+
+const LINE_X_SAMPLES: usize = 20;
 
 pub fn collect_x_candidates(obs: &[LineObs]) -> Vec<f64> {
     let mut xs = Vec::new();
     for seg in obs {
         xs.push(seg.ax);
         xs.push(seg.bx);
+        let dx = (seg.bx - seg.ax).abs();
+        if dx > EPS {
+            for i in 1..LINE_X_SAMPLES {
+                let t = i as f64 / (LINE_X_SAMPLES + 1) as f64;
+                xs.push(seg.ax + t * (seg.bx - seg.ax));
+            }
+        }
     }
     xs
 }

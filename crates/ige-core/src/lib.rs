@@ -15,41 +15,43 @@ mod prelude;
 pub use algorithms::LirSolver;
 
 // LIR solvers
-pub use solvers::lir::axis_aligned::{solve_vertex_grid, AxisAlignedOptions, detect_polygon_type};
+pub use solvers::lir::axis_aligned::{detect_polygon_type, solve_vertex_grid, AxisAlignedOptions};
 pub use solvers::lir::axis_aligned::{
-    MaskBackend,
-    solve_axis_rect_bcrs_with_backend,
-    solve_axis_rect_grid_with_backend,
+    solve_axis_rect_bcrs_with_backend, solve_axis_rect_grid_with_backend, MaskBackend,
 };
-pub use solvers::lir::oriented::{solve_lir_oriented, LirOrientedOptions, LirOrientedResult};
 pub use solvers::lir::oriented::parallel::solve_lir_oriented_parallel;
+pub use solvers::lir::oriented::{solve_lir_oriented, LirOrientedOptions, LirOrientedResult};
 
 // MIC solvers
 pub use solvers::mic::{
-    maximum_inscribed_circle,
-    maximum_inscribed_circle_multipolygon,
-    MicEngine,
-    MicError,
-    MicOptions,
-    MicResult,
-    MicUsedEngine,
-    RobustMode,
+    maximum_inscribed_circle, maximum_inscribed_circle_multipolygon, MicEngine, MicError,
+    MicOptions, MicResult, MicUsedEngine, RobustMode,
 };
 
 // LER solvers
-pub use solvers::ler::{LerOptions, LerResult, solve_ler_axis_aligned, solve_ler_axis_aligned_with_lines, solve_ler_axis_aligned_with_lines_exact, solve_ler_axis_aligned_mixed, solve_ler_axis_aligned_points_sweep, solve_ler_axis_aligned_points_dc, solve_ler_oriented};
 pub use solvers::ler::axis_aligned::ObstacleInput;
+pub use solvers::ler::{
+    solve_ler_axis_aligned, solve_ler_axis_aligned_mixed, solve_ler_axis_aligned_mixed_sweep,
+    solve_ler_axis_aligned_points_dc, solve_ler_axis_aligned_points_sweep,
+    solve_ler_axis_aligned_with_lines, solve_ler_axis_aligned_with_lines_exact, solve_ler_oriented,
+    LerOptions, LerResult,
+};
 
 // Nesting solvers
-pub use solvers::nesting::{NestingOptions, NestingResult, solve_nesting, solve_nesting_convex};
+pub use solvers::nesting::{solve_nesting, solve_nesting_convex, NestingOptions, NestingResult};
 
 // LER + LIR combined solvers
-pub use solvers::ler_lir::{LerLirOptions, LerLirResult, solve_ler_lir, solve_ler_lir_axis_aligned};
+pub use solvers::ler_lir::{
+    solve_ler_lir, solve_ler_lir_axis_aligned, LerLirOptions, LerLirResult,
+};
 
 // OBB solvers
-pub use solvers::obb::{ObbOptions, ObbResult, solve_obb, solve_obb_constrained};
+pub use solvers::obb::{solve_obb, solve_obb_constrained, ObbOptions, ObbResult};
 
-pub use shared::{PolygonType, LirError, Result, Rectangle, SolverOptions, rotate_polygon, AlgorithmCategory, AlgorithmPrecision, AlgorithmSpeed, SolverBackend};
+pub use shared::{
+    rotate_polygon, AlgorithmCategory, AlgorithmPrecision, AlgorithmSpeed, LirError, PolygonType,
+    Rectangle, Result, SolverBackend, SolverOptions,
+};
 
 pub use geo_types::Polygon;
 

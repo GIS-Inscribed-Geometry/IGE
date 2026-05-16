@@ -74,7 +74,8 @@ pub enum PointCliSolver {
 
 /// Parse the `--point-solver` flag. Default is DC (exact divide-and-conquer).
 pub fn parse_point_solver(args: &[String]) -> PointCliSolver {
-    let value = args.iter()
+    let value = args
+        .iter()
         .position(|a| a == "--point-solver")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
@@ -102,15 +103,15 @@ pub fn parse_axis_solver(args: &[String]) -> AxisCliSolver {
         .position(|a| a == "--axis-solver")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
-        .unwrap_or("vertex");
+        .unwrap_or("grid");
 
     match value {
         "vertex" | "vertex_grid" => AxisCliSolver::Vertex,
         "exact" => AxisCliSolver::Exact,
         "grid" => AxisCliSolver::Grid,
         _ => {
-            eprintln!("Unknown --axis-solver '{value}', using vertex");
-            AxisCliSolver::Vertex
+            eprintln!("Unknown --axis-solver '{value}', using grid");
+            AxisCliSolver::Grid
         }
     }
 }
@@ -151,6 +152,7 @@ pub struct CliConfig {
     pub use_edge_anchored: bool,
     pub use_gradient_expand: bool,
     pub use_ler: bool,
+    pub use_ler_oriented: bool,
     pub use_approx_oriented: bool,
     pub use_json: bool,
     pub limit: Option<usize>,
@@ -176,25 +178,31 @@ impl CliConfig {
         let use_edge_anchored = args.contains(&"--edge-anchored".to_string());
         let use_gradient_expand = args.contains(&"--gradient-expand".to_string());
         let use_ler = args.contains(&"--ler".to_string());
+        let use_ler_oriented = args.contains(&"--ler-oriented".to_string());
         let use_approx_oriented = !args.contains(&"--baseline".to_string());
         let use_json = args.contains(&"--json".to_string());
-        let limit = args.iter()
+        let limit = args
+            .iter()
             .position(|a| a == "--limit")
             .and_then(|i| args.get(i + 1))
             .and_then(|s| s.parse::<usize>().ok());
-        let file_path = args.iter()
+        let file_path = args
+            .iter()
             .position(|a| a == "--file")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.clone());
-        let lines_file_path = args.iter()
+        let lines_file_path = args
+            .iter()
             .position(|a| a == "--lines")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.clone());
-        let polygons_file_path = args.iter()
+        let polygons_file_path = args
+            .iter()
             .position(|a| a == "--polygons")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.clone());
-        let line_thickness = args.iter()
+        let line_thickness = args
+            .iter()
             .position(|a| a == "--line-thickness")
             .and_then(|i| args.get(i + 1))
             .and_then(|s| s.parse::<f64>().ok())
@@ -217,6 +225,7 @@ impl CliConfig {
             use_edge_anchored,
             use_gradient_expand,
             use_ler,
+            use_ler_oriented,
             use_approx_oriented,
             use_json,
             limit,
@@ -235,19 +244,28 @@ impl CliConfig {
 /// Parse `--obstacles <types>` where types is a comma-separated list.
 /// Default: `points` when no lines file; `lines` when a lines file is given.
 fn parse_obstacles_flag(args: &[String], has_lines_file: bool) -> ObstacleFlags {
-    if let Some(value) = args.iter()
+    if let Some(value) = args
+        .iter()
         .position(|a| a == "--obstacles")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.to_lowercase())
     {
-        let mut flags = ObstacleFlags { points: false, lines: false, polygons: false };
+        let mut flags = ObstacleFlags {
+            points: false,
+            lines: false,
+            polygons: false,
+        };
         for part in value.split(',') {
             match part.trim() {
                 "points" | "point" => flags.points = true,
                 "lines" | "line" => flags.lines = true,
                 "polygons" | "polygon" => flags.polygons = true,
-                "all" => { flags.points = true; flags.lines = true; flags.polygons = true; }
-                "none" => {},
+                "all" => {
+                    flags.points = true;
+                    flags.lines = true;
+                    flags.polygons = true;
+                }
+                "none" => {}
                 other => eprintln!("Unknown obstacle type '{other}', ignoring"),
             }
         }
@@ -259,9 +277,17 @@ fn parse_obstacles_flag(args: &[String], has_lines_file: bool) -> ObstacleFlags 
     } else {
         // Default: points if no lines file, lines if lines file provided
         if has_lines_file {
-            ObstacleFlags { points: false, lines: true, polygons: false }
+            ObstacleFlags {
+                points: false,
+                lines: true,
+                polygons: false,
+            }
         } else {
-            ObstacleFlags { points: true, lines: false, polygons: false }
+            ObstacleFlags {
+                points: true,
+                lines: false,
+                polygons: false,
+            }
         }
     }
 }
@@ -270,9 +296,13 @@ fn parse_obstacles_flag(args: &[String], has_lines_file: bool) -> ObstacleFlags 
 /// Returns SIMD status string for display.
 pub fn simd_status() -> &'static str {
     #[cfg(feature = "simd")]
-    { " + SIMD" }
+    {
+        " + SIMD"
+    }
     #[cfg(not(feature = "simd"))]
-    { "" }
+    {
+        ""
+    }
 }
 
 /// Generate a human-readable algorithm name for the current configuration.
@@ -280,6 +310,8 @@ pub fn algo_name(config: &CliConfig) -> String {
     let simd = simd_status();
     if config.use_mic_compare {
         format!("MIC exact vs GEOS{}", simd)
+    } else if config.use_ler_oriented {
+        format!("LER Oriented{}", simd)
     } else if config.use_ler {
         let mut parts = vec!["LER".to_string()];
         let f = &config.obstacle_flags;
@@ -291,17 +323,27 @@ pub fn algo_name(config: &CliConfig) -> String {
             };
             parts.push(mode.to_string());
         }
-        if f.lines { parts.push("lines".to_string()); }
-        if f.polygons { parts.push("polygons".to_string()); }
+        if f.lines {
+            parts.push("lines".to_string());
+        }
+        if f.polygons {
+            parts.push("polygons".to_string());
+        }
         format!("{}{}", parts.join("+"), simd)
     } else if config.use_sa && config.use_parallel {
         format!("LIR Approx Oriented + SA + local angle polish{}", simd)
     } else if config.use_sa {
         format!("LIR Approx Oriented + SA rescue{}", simd)
     } else if config.use_bootstrap_seeds && config.use_edge_anchored {
-        format!("LIR Approx Oriented + bootstrap seeds + edge-anchored{}", simd)
+        format!(
+            "LIR Approx Oriented + bootstrap seeds + edge-anchored{}",
+            simd
+        )
     } else if config.use_bootstrap_seeds && config.use_parallel {
-        format!("LIR Approx Oriented + bootstrap seeds + local angle polish{}", simd)
+        format!(
+            "LIR Approx Oriented + bootstrap seeds + local angle polish{}",
+            simd
+        )
     } else if config.use_bootstrap_seeds {
         format!("LIR Approx Oriented + bootstrap seeds{}", simd)
     } else if config.use_edge_anchored {
@@ -320,7 +362,11 @@ pub fn algo_name(config: &CliConfig) -> String {
                     simd
                 )
             }
-            _ => format!("axis-aligned (solver={}){}", axis_solver_name(config.axis_solver), simd),
+            _ => format!(
+                "axis-aligned (solver={}){}",
+                axis_solver_name(config.axis_solver),
+                simd
+            ),
         }
     }
 }

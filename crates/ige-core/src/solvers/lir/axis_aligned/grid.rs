@@ -7,8 +7,8 @@
 use geo::{BoundingRect, Contains};
 use geo_types::{Point, Polygon};
 
+use super::containment::{contract_rect_to_boundary, rect_fully_contained};
 use super::histogram::{lrih, lrih_vp};
-use super::containment::{rect_fully_contained, contract_rect_to_boundary};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MaskBackend {
@@ -44,7 +44,13 @@ pub fn solve_axis_rect_grid(
     max_ratio: f64,
     min_ratio: f64,
 ) -> Option<(f64, f64, f64, f64, f64)> {
-    solve_axis_rect_grid_with_backend(poly, grid_steps, max_ratio, min_ratio, MaskBackend::default())
+    solve_axis_rect_grid_with_backend(
+        poly,
+        grid_steps,
+        max_ratio,
+        min_ratio,
+        MaskBackend::default(),
+    )
 }
 
 pub fn solve_axis_rect_grid_with_backend(
@@ -62,11 +68,6 @@ pub fn solve_axis_rect_grid_with_backend(
 
     if maxx <= minx || maxy <= miny || grid_steps < 2 {
         return None;
-    }
-
-    let min_steps = crate::tuning::AA_GRID_COARSE_STEPS;
-    if grid_steps < min_steps {
-        grid_steps = min_steps;
     }
 
     // Generate grid-line positions from 1D Sobol sequences (low-discrepancy)
@@ -106,10 +107,14 @@ pub fn solve_axis_rect_grid_with_backend(
                     None => Some((x0, y0, x1, y1, area)),
                     _ => best,
                 };
-            } else if let Some((cx0, cy0, cx1, cy1)) = contract_rect_to_boundary(poly, x0, y0, x1, y1) {
+            } else if let Some((cx0, cy0, cx1, cy1)) =
+                contract_rect_to_boundary(poly, x0, y0, x1, y1)
+            {
                 let contracted_area = (cx1 - cx0) * (cy1 - cy0);
                 best = match best {
-                    Some((_, _, _, _, a)) if contracted_area > a => Some((cx0, cy0, cx1, cy1, contracted_area)),
+                    Some((_, _, _, _, a)) if contracted_area > a => {
+                        Some((cx0, cy0, cx1, cy1, contracted_area))
+                    }
                     None => Some((cx0, cy0, cx1, cy1, contracted_area)),
                     _ => best,
                 };
@@ -133,15 +138,19 @@ pub fn solve_axis_rect_grid_with_backend(
                     let test_x1 = x1 + dx;
                     let test_y1 = y1 + dy;
 
-                    if let Some((rx0, ry0, rx1, ry1)) = contract_rect_to_boundary(poly, test_x0, test_y0, test_x1, test_y1) {
+                    if let Some((rx0, ry0, rx1, ry1)) =
+                        contract_rect_to_boundary(poly, test_x0, test_y0, test_x1, test_y1)
+                    {
                         let test_area = (rx1 - rx0) * (ry1 - ry0);
-                        let cur_area = (best_refined.2 - best_refined.0) * (best_refined.3 - best_refined.1);
+                        let cur_area =
+                            (best_refined.2 - best_refined.0) * (best_refined.3 - best_refined.1);
                         if test_area > cur_area {
                             best_refined = (rx0, ry0, rx1, ry1);
                         }
                     } else if rect_fully_contained(poly, test_x0, test_y0, test_x1, test_y1) {
                         let test_area = (test_x1 - test_x0) * (test_y1 - test_y0);
-                        let cur_area = (best_refined.2 - best_refined.0) * (best_refined.3 - best_refined.1);
+                        let cur_area =
+                            (best_refined.2 - best_refined.0) * (best_refined.3 - best_refined.1);
                         if test_area > cur_area {
                             best_refined = (test_x0, test_y0, test_x1, test_y1);
                         }
@@ -161,7 +170,6 @@ pub fn solve_axis_rect_grid_with_backend(
 
 /// Maximum vertex-coordinate count per axis before falling back to uniform grid.
 
-
 /// Solve the largest axis-aligned rectangle using polygon vertex coordinates
 /// as grid lines (boundary-coordinate raster solve).
 ///
@@ -172,7 +180,13 @@ pub fn solve_axis_rect_bcrs(
     max_ratio: f64,
     min_ratio: f64,
 ) -> Option<(f64, f64, f64, f64, f64)> {
-    solve_axis_rect_bcrs_with_backend(rot_poly, seed_bounds, max_ratio, min_ratio, MaskBackend::default())
+    solve_axis_rect_bcrs_with_backend(
+        rot_poly,
+        seed_bounds,
+        max_ratio,
+        min_ratio,
+        MaskBackend::default(),
+    )
 }
 
 pub fn solve_axis_rect_bcrs_with_backend(
@@ -209,7 +223,9 @@ pub fn solve_axis_rect_bcrs_with_backend(
     xs_raw.dedup_by(|a, b| (*a - *b).abs() < 1e-14);
     ys_raw.dedup_by(|a, b| (*a - *b).abs() < 1e-14);
 
-    if xs_raw.len() > crate::tuning::AA_BCRS_MAX_COORDS || ys_raw.len() > crate::tuning::AA_BCRS_MAX_COORDS {
+    if xs_raw.len() > crate::tuning::AA_BCRS_MAX_COORDS
+        || ys_raw.len() > crate::tuning::AA_BCRS_MAX_COORDS
+    {
         return None;
     }
 
@@ -225,7 +241,9 @@ pub fn solve_axis_rect_bcrs_with_backend(
 
     // Cell-centre mask
     let mut mask = vec![false; n_cols * n_rows];
-    build_bcrs_mask(rot_poly, &xs_raw, &ys_raw, &mut mask, n_cols, n_rows, backend);
+    build_bcrs_mask(
+        rot_poly, &xs_raw, &ys_raw, &mut mask, n_cols, n_rows, backend,
+    );
 
     let mut heights = vec![0usize; n_cols];
     let mut best: Option<(f64, f64, f64, f64, f64)> = None;
@@ -259,10 +277,14 @@ pub fn solve_axis_rect_bcrs_with_backend(
                     None => Some((x0, y0, x1, y1, area)),
                     _ => best,
                 };
-            } else if let Some((cx0, cy0, cx1, cy1)) = contract_rect_to_boundary(rot_poly, x0, y0, x1, y1) {
+            } else if let Some((cx0, cy0, cx1, cy1)) =
+                contract_rect_to_boundary(rot_poly, x0, y0, x1, y1)
+            {
                 let contracted_area = (cx1 - cx0) * (cy1 - cy0);
                 best = match best {
-                    Some((_, _, _, _, a)) if contracted_area > a => Some((cx0, cy0, cx1, cy1, contracted_area)),
+                    Some((_, _, _, _, a)) if contracted_area > a => {
+                        Some((cx0, cy0, cx1, cy1, contracted_area))
+                    }
                     None => Some((cx0, cy0, cx1, cy1, contracted_area)),
                     _ => best,
                 };
@@ -286,15 +308,19 @@ pub fn solve_axis_rect_bcrs_with_backend(
                     let test_x1 = x1 + dx;
                     let test_y1 = y1 + dy;
 
-                    if let Some((rx0, ry0, rx1, ry1)) = contract_rect_to_boundary(rot_poly, test_x0, test_y0, test_x1, test_y1) {
+                    if let Some((rx0, ry0, rx1, ry1)) =
+                        contract_rect_to_boundary(rot_poly, test_x0, test_y0, test_x1, test_y1)
+                    {
                         let test_area = (rx1 - rx0) * (ry1 - ry0);
-                        let cur_area = (best_refined.2 - best_refined.0) * (best_refined.3 - best_refined.1);
+                        let cur_area =
+                            (best_refined.2 - best_refined.0) * (best_refined.3 - best_refined.1);
                         if test_area > cur_area {
                             best_refined = (rx0, ry0, rx1, ry1);
                         }
                     } else if rect_fully_contained(rot_poly, test_x0, test_y0, test_x1, test_y1) {
                         let test_area = (test_x1 - test_x0) * (test_y1 - test_y0);
-                        let cur_area = (best_refined.2 - best_refined.0) * (best_refined.3 - best_refined.1);
+                        let cur_area =
+                            (best_refined.2 - best_refined.0) * (best_refined.3 - best_refined.1);
                         if test_area > cur_area {
                             best_refined = (test_x0, test_y0, test_x1, test_y1);
                         }
@@ -324,7 +350,14 @@ struct ActiveEdge {
 /// activated/deactivated as the scanline advances.  Adjacent rows share most
 /// of their crossing structure ΓÇö only edges entering or leaving the active set
 /// are updated, reducing the per-row work from O(vertices) to O(changed_edges).
-fn scanline_mask(poly: &Polygon<f64>, xs: &[f64], ys: &[f64], mask: &mut [bool], nx: usize, ny: usize) {
+fn scanline_mask(
+    poly: &Polygon<f64>,
+    xs: &[f64],
+    ys: &[f64],
+    mask: &mut [bool],
+    nx: usize,
+    ny: usize,
+) {
     // Collect non-horizontal polygon edges with their active-y range
     let mut edges: Vec<ActiveEdge> = Vec::new();
     for ring in std::iter::once(poly.exterior()).chain(poly.interiors()) {
@@ -394,11 +427,24 @@ fn scanline_mask(poly: &Polygon<f64>, xs: &[f64], ys: &[f64], mask: &mut [bool],
     }
 }
 
-fn fallback_to_cpu_mask(poly: &Polygon<f64>, xs: &[f64], ys: &[f64], mask: &mut [bool], grid_steps: usize) {
+fn fallback_to_cpu_mask(
+    poly: &Polygon<f64>,
+    xs: &[f64],
+    ys: &[f64],
+    mask: &mut [bool],
+    grid_steps: usize,
+) {
     scanline_mask(poly, xs, ys, mask, grid_steps, grid_steps);
 }
 
-fn fallback_to_cpu_bcrs_mask(poly: &Polygon<f64>, xs: &[f64], ys: &[f64], mask: &mut [bool], n_cols: usize, n_rows: usize) {
+fn fallback_to_cpu_bcrs_mask(
+    poly: &Polygon<f64>,
+    xs: &[f64],
+    ys: &[f64],
+    mask: &mut [bool],
+    n_cols: usize,
+    n_rows: usize,
+) {
     for r in 0..n_rows {
         let cy = (ys[r] + ys[r + 1]) * 0.5;
         for c in 0..n_cols {
@@ -410,7 +456,12 @@ fn fallback_to_cpu_bcrs_mask(poly: &Polygon<f64>, xs: &[f64], ys: &[f64], mask: 
 }
 
 #[cfg(feature = "gpu")]
-fn gpu_build_mask_sdf(poly: &Polygon<f64>, points: &[(f64, f64)], mask: &mut [bool], n_cols: usize) -> bool {
+fn gpu_build_mask_sdf(
+    poly: &Polygon<f64>,
+    points: &[(f64, f64)],
+    mask: &mut [bool],
+    n_cols: usize,
+) -> bool {
     if let Some(gpu) = crate::gpu::get_gpu_context() {
         let gpu_rects: Vec<_> = points.iter().map(|&(x, y)| (x, y, x, y)).collect();
         if let Ok(sdf_results) = gpu.evaluate_rect_sdf_batch(poly, &gpu_rects) {
@@ -570,11 +621,23 @@ mod tests {
         }
         let poly = unit_square();
         let cpu = solve_axis_rect_grid_with_backend(&poly, 64, 0.0, MaskBackend::Cpu).unwrap();
-        let gpu_sdf = solve_axis_rect_grid_with_backend(&poly, 64, 0.0, MaskBackend::GpuSdf).unwrap();
-        let gpu_grid = solve_axis_rect_grid_with_backend(&poly, 64, 0.0, MaskBackend::GpuGridBatch).unwrap();
+        let gpu_sdf =
+            solve_axis_rect_grid_with_backend(&poly, 64, 0.0, MaskBackend::GpuSdf).unwrap();
+        let gpu_grid =
+            solve_axis_rect_grid_with_backend(&poly, 64, 0.0, MaskBackend::GpuGridBatch).unwrap();
 
         let cpu_area = cpu.4;
-        assert!((gpu_sdf.4 - cpu_area).abs() <= 1e-3, "gpu_sdf area mismatch: {} vs {}", gpu_sdf.4, cpu_area);
-        assert!((gpu_grid.4 - cpu_area).abs() <= 1e-3, "gpu_grid area mismatch: {} vs {}", gpu_grid.4, cpu_area);
+        assert!(
+            (gpu_sdf.4 - cpu_area).abs() <= 1e-3,
+            "gpu_sdf area mismatch: {} vs {}",
+            gpu_sdf.4,
+            cpu_area
+        );
+        assert!(
+            (gpu_grid.4 - cpu_area).abs() <= 1e-3,
+            "gpu_grid area mismatch: {} vs {}",
+            gpu_grid.4,
+            cpu_area
+        );
     }
 }

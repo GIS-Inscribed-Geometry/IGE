@@ -24,7 +24,8 @@ impl PipIndex {
         let rings = host.rings.clone();
 
         // Precompute per-ring bounding boxes
-        let ring_bboxes = rings.iter()
+        let ring_bboxes = rings
+            .iter()
             .map(|meta| {
                 let ring = &coords[meta.start..meta.end];
                 let mut min_x = f64::INFINITY;
@@ -37,11 +38,20 @@ impl PipIndex {
                     max_x = max_x.max(pt[0]);
                     max_y = max_y.max(pt[1]);
                 }
-                RingBbox { min_x, min_y, max_x, max_y }
+                RingBbox {
+                    min_x,
+                    min_y,
+                    max_x,
+                    max_y,
+                }
             })
             .collect();
 
-        Self { coords, rings, ring_bboxes }
+        Self {
+            coords,
+            rings,
+            ring_bboxes,
+        }
     }
 
     pub fn contains_strict_xy(&self, x: f64, y: f64) -> bool {

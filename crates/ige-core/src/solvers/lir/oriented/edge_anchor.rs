@@ -40,7 +40,10 @@ struct RotFrame {
 }
 
 fn rotate_polygon_to_frame(poly: &Polygon<f64>, angle_deg: f64) -> Polygon<f64> {
-    let centroid: Point<f64> = poly.centroid().map(|c| c.into()).unwrap_or(Point::new(0.0, 0.0));
+    let centroid: Point<f64> = poly
+        .centroid()
+        .map(|c| c.into())
+        .unwrap_or(Point::new(0.0, 0.0));
     let rad = -angle_deg.to_radians();
     let cos_a = rad.cos();
     let sin_a = rad.sin();
@@ -60,9 +63,7 @@ fn rotate_polygon_to_frame(poly: &Polygon<f64>, angle_deg: f64) -> Polygon<f64> 
     let interiors: Vec<geo_types::LineString<f64>> = poly
         .interiors()
         .iter()
-        .map(|ring| {
-            geo_types::LineString::from(ring.0.iter().map(&rotate).collect::<Vec<_>>())
-        })
+        .map(|ring| geo_types::LineString::from(ring.0.iter().map(&rotate).collect::<Vec<_>>()))
         .collect();
 
     Polygon::new(geo_types::LineString::from(ext_coords), interiors)
@@ -283,13 +284,13 @@ fn common_y_interval_for_x_span(
         }
     }
 
-    common_intervals
-        .into_iter()
-        .max_by(|a, b| {
-            let a_span = a.1 - a.0;
-            let b_span = b.1 - b.0;
-            a_span.partial_cmp(&b_span).unwrap_or(std::cmp::Ordering::Equal)
-        })
+    common_intervals.into_iter().max_by(|a, b| {
+        let a_span = a.1 - a.0;
+        let b_span = b.1 - b.0;
+        a_span
+            .partial_cmp(&b_span)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 fn common_x_interval_for_y_span(
@@ -336,13 +337,13 @@ fn common_x_interval_for_y_span(
         }
     }
 
-    common_intervals
-        .into_iter()
-        .max_by(|a, b| {
-            let a_span = a.1 - a.0;
-            let b_span = b.1 - b.0;
-            a_span.partial_cmp(&b_span).unwrap_or(std::cmp::Ordering::Equal)
-        })
+    common_intervals.into_iter().max_by(|a, b| {
+        let a_span = a.1 - a.0;
+        let b_span = b.1 - b.0;
+        a_span
+            .partial_cmp(&b_span)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 fn rect_covers(poly: &Polygon<f64>, x0: f64, y0: f64, x1: f64, y1: f64) -> bool {
@@ -370,7 +371,8 @@ fn compute_support_score(poly: &Polygon<f64>, x0: f64, y0: f64, x1: f64, y1: f64
         None => return 0.0,
     };
 
-    let diag = ((bbox.max().x - bbox.min().x).powi(2) + (bbox.max().y - bbox.min().y).powi(2)).sqrt();
+    let diag =
+        ((bbox.max().x - bbox.min().x).powi(2) + (bbox.max().y - bbox.min().y).powi(2)).sqrt();
     let threshold = diag * 0.015;
 
     let sdf_l = polygon_sdf(poly, x0, (y0 + y1) * 0.5).abs();
@@ -428,7 +430,9 @@ fn generate_vertical_pair_candidates(
                 }
 
                 if !rect_covers(&frame.poly, x_l, y0, x_r, y1) {
-                    if let Some((y0_r, y1_r)) = common_y_interval_for_x_span(&frame.poly, x_l, x_r, 5) {
+                    if let Some((y0_r, y1_r)) =
+                        common_y_interval_for_x_span(&frame.poly, x_l, x_r, 5)
+                    {
                         if !rect_covers(&frame.poly, x_l, y0_r, x_r, y1_r) {
                             continue;
                         }
@@ -470,7 +474,9 @@ fn generate_vertical_pair_candidates(
     candidates.sort_by(|a, b| {
         let score_a = a.area * (1.0 + a.support_score * 0.3);
         let score_b = b.area * (1.0 + b.support_score * 0.3);
-        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     candidates.truncate(top_k);
@@ -519,7 +525,9 @@ fn generate_horizontal_pair_candidates(
                 }
 
                 if !rect_covers(&frame.poly, x0, y_b, x1, y_t) {
-                    if let Some((x0_r, x1_r)) = common_x_interval_for_y_span(&frame.poly, y_b, y_t, 5) {
+                    if let Some((x0_r, x1_r)) =
+                        common_x_interval_for_y_span(&frame.poly, y_b, y_t, 5)
+                    {
                         if !rect_covers(&frame.poly, x0_r, y_b, x1_r, y_t) {
                             continue;
                         }
@@ -561,7 +569,9 @@ fn generate_horizontal_pair_candidates(
     candidates.sort_by(|a, b| {
         let score_a = a.area * (1.0 + a.support_score * 0.3);
         let score_b = b.area * (1.0 + b.support_score * 0.3);
-        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     candidates.truncate(top_k);
@@ -581,26 +591,86 @@ fn generate_single_side_anchor_candidates(
 
     let min_dim = diag * 0.02;
 
-    let left_candidates = generate_side_anchored_at_x(&frame.poly, minx, miny, maxy, min_dim, max_ratio, min_ratio, current_best_area, &frame.x_events);
+    let left_candidates = generate_side_anchored_at_x(
+        &frame.poly,
+        minx,
+        miny,
+        maxy,
+        min_dim,
+        max_ratio,
+        min_ratio,
+        current_best_area,
+        &frame.x_events,
+    );
     candidates.extend(left_candidates);
 
-    let right_candidates = generate_side_anchored_at_x(&frame.poly, maxx, miny, maxy, min_dim, max_ratio, min_ratio, current_best_area, &frame.x_events);
+    let right_candidates = generate_side_anchored_at_x(
+        &frame.poly,
+        maxx,
+        miny,
+        maxy,
+        min_dim,
+        max_ratio,
+        min_ratio,
+        current_best_area,
+        &frame.x_events,
+    );
     candidates.extend(right_candidates);
 
-    let bottom_candidates = generate_side_anchored_at_y(&frame.poly, minx, maxx, miny, min_dim, max_ratio, min_ratio, current_best_area, &frame.y_events);
+    let bottom_candidates = generate_side_anchored_at_y(
+        &frame.poly,
+        minx,
+        maxx,
+        miny,
+        min_dim,
+        max_ratio,
+        min_ratio,
+        current_best_area,
+        &frame.y_events,
+    );
     candidates.extend(bottom_candidates);
 
-    let top_candidates = generate_side_anchored_at_y(&frame.poly, minx, maxx, maxy, min_dim, max_ratio, min_ratio, current_best_area, &frame.y_events);
+    let top_candidates = generate_side_anchored_at_y(
+        &frame.poly,
+        minx,
+        maxx,
+        maxy,
+        min_dim,
+        max_ratio,
+        min_ratio,
+        current_best_area,
+        &frame.y_events,
+    );
     candidates.extend(top_candidates);
 
     for edge_chain in extract_dominant_chains(&frame.poly) {
         match edge_chain {
             EdgeChain::Vertical { x, y_min, y_max } => {
-                let chain_candidates = generate_side_anchored_at_x(&frame.poly, x, y_min, y_max, min_dim, max_ratio, min_ratio, current_best_area, &frame.x_events);
+                let chain_candidates = generate_side_anchored_at_x(
+                    &frame.poly,
+                    x,
+                    y_min,
+                    y_max,
+                    min_dim,
+                    max_ratio,
+                    min_ratio,
+                    current_best_area,
+                    &frame.x_events,
+                );
                 candidates.extend(chain_candidates);
             }
             EdgeChain::Horizontal { y, x_min, x_max } => {
-                let chain_candidates = generate_side_anchored_at_y(&frame.poly, x_min, x_max, y, min_dim, max_ratio, min_ratio, current_best_area, &frame.y_events);
+                let chain_candidates = generate_side_anchored_at_y(
+                    &frame.poly,
+                    x_min,
+                    x_max,
+                    y,
+                    min_dim,
+                    max_ratio,
+                    min_ratio,
+                    current_best_area,
+                    &frame.y_events,
+                );
                 candidates.extend(chain_candidates);
             }
         }
@@ -609,7 +679,9 @@ fn generate_single_side_anchor_candidates(
     candidates.sort_by(|a, b| {
         let score_a = a.area * (1.0 + a.support_score * 0.3);
         let score_b = b.area * (1.0 + b.support_score * 0.3);
-        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     candidates.truncate(top_k);
@@ -623,9 +695,10 @@ enum EdgeChain {
 
 fn extract_dominant_chains(poly: &Polygon<f64>) -> Vec<EdgeChain> {
     let mut chains = Vec::new();
-    let diag = poly.bounding_rect().map(|b| {
-        ((b.max().x - b.min().x).powi(2) + (b.max().y - b.min().y).powi(2)).sqrt()
-    }).unwrap_or(1.0);
+    let diag = poly
+        .bounding_rect()
+        .map(|b| ((b.max().x - b.min().x).powi(2) + (b.max().y - b.min().y).powi(2)).sqrt())
+        .unwrap_or(1.0);
 
     let min_length = diag * 0.15;
 
@@ -669,13 +742,18 @@ fn generate_side_anchored_at_x(
 ) -> Vec<EdgeCandidate> {
     let mut candidates = Vec::new();
 
-    if let Some((y0, y1)) = common_y_interval_for_x_span(poly, x_anchor, x_anchor + min_dim * 2.0, 3) {
+    if let Some((y0, y1)) =
+        common_y_interval_for_x_span(poly, x_anchor, x_anchor + min_dim * 2.0, 3)
+    {
         let span = y1 - y0;
         if span < min_dim {
             return candidates;
         }
 
-        let x_max = poly.bounding_rect().map(|b| b.max().x).unwrap_or(x_anchor + 100.0);
+        let x_max = poly
+            .bounding_rect()
+            .map(|b| b.max().x)
+            .unwrap_or(x_anchor + 100.0);
         let mut x1 = x_anchor + min_dim;
         while x1 < x_max {
             if let Some((fy0, fy1)) = common_y_interval_for_x_span(poly, x_anchor, x1, 3) {
@@ -703,13 +781,18 @@ fn generate_side_anchored_at_x(
         }
     }
 
-    if let Some((y0, y1)) = common_y_interval_for_x_span(poly, x_anchor - min_dim * 2.0, x_anchor, 3) {
+    if let Some((y0, y1)) =
+        common_y_interval_for_x_span(poly, x_anchor - min_dim * 2.0, x_anchor, 3)
+    {
         let span = y1 - y0;
         if span < min_dim {
             return candidates;
         }
 
-        let x_min = poly.bounding_rect().map(|b| b.min().x).unwrap_or(x_anchor - 100.0);
+        let x_min = poly
+            .bounding_rect()
+            .map(|b| b.min().x)
+            .unwrap_or(x_anchor - 100.0);
         let mut x0 = x_anchor - min_dim;
         while x0 > x_min {
             if let Some((fy0, fy1)) = common_y_interval_for_x_span(poly, x0, x_anchor, 3) {
@@ -753,13 +836,18 @@ fn generate_side_anchored_at_y(
 ) -> Vec<EdgeCandidate> {
     let mut candidates = Vec::new();
 
-    if let Some((x0, x1)) = common_x_interval_for_y_span(poly, y_anchor, y_anchor + min_dim * 2.0, 3) {
+    if let Some((x0, x1)) =
+        common_x_interval_for_y_span(poly, y_anchor, y_anchor + min_dim * 2.0, 3)
+    {
         let span = x1 - x0;
         if span < min_dim {
             return candidates;
         }
 
-        let y_max = poly.bounding_rect().map(|b| b.max().y).unwrap_or(y_anchor + 100.0);
+        let y_max = poly
+            .bounding_rect()
+            .map(|b| b.max().y)
+            .unwrap_or(y_anchor + 100.0);
         let mut y1 = y_anchor + min_dim;
         while y1 < y_max {
             if let Some((fx0, fx1)) = common_x_interval_for_y_span(poly, y_anchor, y1, 3) {
@@ -787,13 +875,18 @@ fn generate_side_anchored_at_y(
         }
     }
 
-    if let Some((x0, x1)) = common_x_interval_for_y_span(poly, y_anchor - min_dim * 2.0, y_anchor, 3) {
+    if let Some((x0, x1)) =
+        common_x_interval_for_y_span(poly, y_anchor - min_dim * 2.0, y_anchor, 3)
+    {
         let span = x1 - x0;
         if span < min_dim {
             return candidates;
         }
 
-        let y_min = poly.bounding_rect().map(|b| b.min().y).unwrap_or(y_anchor - 100.0);
+        let y_min = poly
+            .bounding_rect()
+            .map(|b| b.min().y)
+            .unwrap_or(y_anchor - 100.0);
         let mut y0 = y_anchor - min_dim;
         while y0 > y_min {
             if let Some((fx0, fx1)) = common_x_interval_for_y_span(poly, y0, y_anchor, 3) {
@@ -889,7 +982,11 @@ pub fn generate_edge_anchored_candidates(
     let (minx, miny, maxx, maxy) = frame.bbox;
     let diag = ((maxx - minx).powi(2) + (maxy - miny).powi(2)).sqrt();
 
-    let threshold = if current_best_area > 0.0 { current_best_area } else { diag * diag * 0.25 };
+    let threshold = if current_best_area > 0.0 {
+        current_best_area
+    } else {
+        diag * diag * 0.25
+    };
 
     let top_k = 12;
 
@@ -931,7 +1028,9 @@ pub fn generate_edge_anchored_candidates(
     all_candidates.sort_by(|a, b| {
         let score_a = a.area * (1.0 + a.support_score * 0.3) * a.validity_score;
         let score_b = b.area * (1.0 + b.support_score * 0.3) * b.validity_score;
-        score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     all_candidates.truncate(top_k * 2);

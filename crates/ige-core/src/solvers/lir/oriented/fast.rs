@@ -1,18 +1,15 @@
-//! Fast-path solver for simple convex polygons.
-//!
-//! Port of `_maybe_fast_path` from `bcrs_fast_worker.py`.
-//! For rectangles and simple convex shapes (<=8 vertices, no holes),
-//! the optimal inscribed rectangle is edge-aligned, skipping the full BCRS pipeline.
+//! Fast-path solver for perfect rectangles (4 vertices, no holes, right angles).
+//! Certifies the identity polygon directly without going through the full pipeline.
+//! All other shapes fall through to the main solver.
 
-use geo::{Area, Centroid, ConvexHull};
-use geo_types::{Coord, Point, Polygon};
-
-use super::expand::expand_rect_to_boundary;
-use super::super::axis_aligned::solve_axis_rect_grid;
-use crate::shared::rotate_polygon;
+use geo_types::Polygon;
 
 /// Try the convex fast path. Returns `(certified_polygon, area, angle_deg, ratio)` or `None`.
-pub fn maybe_fast_path(poly: &Polygon<f64>, max_ratio: f64, min_ratio: f64) -> Option<(Polygon<f64>, f64, f64, f64)> {
+pub fn maybe_fast_path(
+    poly: &Polygon<f64>,
+    max_ratio: f64,
+    min_ratio: f64,
+) -> Option<(Polygon<f64>, f64, f64, f64)> {
     let ext = &poly.exterior().0;
     let nv = if ext.len() > 1 { ext.len() - 1 } else { 0 };
     let has_holes = !poly.interiors().is_empty();
@@ -57,9 +54,17 @@ pub fn maybe_fast_path(poly: &Polygon<f64>, max_ratio: f64, min_ratio: f64) -> O
                     crate::tuning::CERT_MAX_SHRINK,
                 ) {
                     let corners: Vec<_> = cert_poly.exterior().0.iter().collect();
-                    let w = ((corners[1].x - corners[0].x).powi(2) + (corners[1].y - corners[0].y).powi(2)).sqrt();
-                    let h = ((corners[2].x - corners[1].x).powi(2) + (corners[2].y - corners[1].y).powi(2)).sqrt();
-                    let rat = if w.min(h) > 0.0 { w.max(h) / w.min(h) } else { 1.0 };
+                    let w = ((corners[1].x - corners[0].x).powi(2)
+                        + (corners[1].y - corners[0].y).powi(2))
+                    .sqrt();
+                    let h = ((corners[2].x - corners[1].x).powi(2)
+                        + (corners[2].y - corners[1].y).powi(2))
+                    .sqrt();
+                    let rat = if w.min(h) > 0.0 {
+                        w.max(h) / w.min(h)
+                    } else {
+                        1.0
+                    };
                     return Some((cert_poly, cert_area, ang, rat));
                 }
                 return None;
@@ -67,100 +72,7 @@ pub fn maybe_fast_path(poly: &Polygon<f64>, max_ratio: f64, min_ratio: f64) -> O
         }
     }
 
-    // Simple convex: <=8 vertices, no holes, near-convex
-    if has_holes || nv < 3 || nv > 8 {
-        return None;
-    }
-
-    let hull = poly.convex_hull();
-    let hull_area = hull.unsigned_area();
-    let poly_area = poly.unsigned_area();
-    if poly_area <= 0.0 || hull_area / poly_area > 1.005 {
-        return None;
-    }
-
-    // Edge-aligned angles from hull
-    let mut raw_angles: Vec<f64> = Vec::new();
-    let hull_ext = &hull.exterior().0;
-    for i in 0..hull_ext.len().saturating_sub(1) {
-        let dx = hull_ext[i + 1].x - hull_ext[i].x;
-        let dy = hull_ext[i + 1].y - hull_ext[i].y;
-        if dx.abs() > 1e-12 || dy.abs() > 1e-12 {
-            let a = dy.atan2(dx).to_degrees() % 90.0;
-            if !raw_angles.iter().any(|&ra| (a - ra).abs() < 1.0) {
-                raw_angles.push(a);
-            }
-        }
-    }
-    for fixed in &[0.0, 45.0] {
-        if !raw_angles.iter().any(|&ra| (fixed - ra).abs() < 1.0) {
-            raw_angles.push(*fixed);
-        }
-    }
-    raw_angles.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-    let cent = poly.centroid()?;
-    let centroid = Point::new(cent.x(), cent.y());
-    let mut best: Option<(Polygon<f64>, f64, f64, f64)> = None;
-
-    for &a in &raw_angles {
-        let rot = rotate_polygon(poly, -a);
-        let seed = solve_axis_rect_grid(&rot, 60, max_ratio, min_ratio);
-        let (sx0, sy0, sx1, sy1) = match seed {
-            Some((x0, y0, x1, y1, _)) => (x0, y0, x1, y1),
-            None => continue,
-        };
-
-        let (bx0, by0, bx1, by1) = expand_rect_to_boundary(&rot, sx0, sy0, sx1, sy1, max_ratio, min_ratio);
-        let area_r = (bx1 - bx0) * (by1 - by0);
-        if area_r <= 0.0 {
-            continue;
-        }
-
-        let world_rect = Polygon::new(
-            geo_types::LineString::from(vec![
-                rotate_point(bx0, by0, a, &centroid),
-                rotate_point(bx1, by0, a, &centroid),
-                rotate_point(bx1, by1, a, &centroid),
-                rotate_point(bx0, by1, a, &centroid),
-                rotate_point(bx0, by0, a, &centroid),
-            ]),
-            vec![],
-        );
-
-        // Certify the actual oriented rect (not its AABB)
-        if let Some((cert_poly, cert_area)) = super::certify_and_adjust(poly, &world_rect, max_ratio, crate::tuning::CERT_EPS, crate::tuning::CERT_MAX_SHRINK) {
-            if cert_area > 0.0 {
-                let corners: Vec<_> = cert_poly.exterior().0.iter().collect();
-                let w = ((corners[1].x - corners[0].x).powi(2) + (corners[1].y - corners[0].y).powi(2)).sqrt();
-                let h = ((corners[2].x - corners[1].x).powi(2) + (corners[2].y - corners[1].y).powi(2)).sqrt();
-                let rat = if w.min(h) > 0.0 { w.max(h) / w.min(h) } else { 1.0 };
-                let candidate = (cert_poly, cert_area, a.rem_euclid(90.0), rat);
-
-                if let Some((_, ref cur_best_area, _, _)) = best {
-                    if cert_area > *cur_best_area {
-                        best = Some(candidate);
-                    }
-                } else {
-                    best = Some(candidate);
-                }
-            }
-        }
-    }
-
-    best
-}
-
-fn rotate_point(x: f64, y: f64, angle_deg: f64, origin: &Point<f64>) -> Coord<f64> {
-    let rad = angle_deg.to_radians();
-    let cos_a = rad.cos();
-    let sin_a = rad.sin();
-    let dx = x - origin.x();
-    let dy = y - origin.y();
-    Coord {
-        x: origin.x() + dx * cos_a - dy * sin_a,
-        y: origin.y() + dx * sin_a + dy * cos_a,
-    }
+    None
 }
 
 #[cfg(test)]

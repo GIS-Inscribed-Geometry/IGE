@@ -48,13 +48,7 @@ fn ring_intersects_rect(ring: &LineString<f64>, x0: f64, y0: f64, x1: f64, y1: f
 /// Stage 3 -- vertex containment: no polygon vertex may lie strictly inside
 ///           the rect (catches concave notches where boundary edges coincide
 ///           with rect edges).
-pub fn rect_fully_contained(
-    poly: &Polygon<f64>,
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
-) -> bool {
+pub fn rect_fully_contained(poly: &Polygon<f64>, x0: f64, y0: f64, x1: f64, y1: f64) -> bool {
     if x1 - x0 < 1e-12 || y1 - y0 < 1e-12 {
         return false;
     }

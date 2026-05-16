@@ -8,11 +8,26 @@ use ige_core::solvers::mic::{MicResult, MicUsedEngine};
 pub fn rect_to_polygon(rect: ige_core::shared::Rectangle) -> Polygon<f64> {
     Polygon::new(
         LineString::from(vec![
-            Coord { x: rect.x_min, y: rect.y_min },
-            Coord { x: rect.x_max, y: rect.y_min },
-            Coord { x: rect.x_max, y: rect.y_max },
-            Coord { x: rect.x_min, y: rect.y_max },
-            Coord { x: rect.x_min, y: rect.y_min },
+            Coord {
+                x: rect.x_min,
+                y: rect.y_min,
+            },
+            Coord {
+                x: rect.x_max,
+                y: rect.y_min,
+            },
+            Coord {
+                x: rect.x_max,
+                y: rect.y_max,
+            },
+            Coord {
+                x: rect.x_min,
+                y: rect.y_max,
+            },
+            Coord {
+                x: rect.x_min,
+                y: rect.y_min,
+            },
         ]),
         vec![],
     )
@@ -40,7 +55,7 @@ pub struct ComplexityMetrics {
     pub hole_count: usize,
     pub total_hole_vertices: usize,
     pub total_segments: usize,
-    pub reflex_vertices: Option<usize>,  // None if not computed
+    pub reflex_vertices: Option<usize>, // None if not computed
 }
 
 /// Compute basic complexity metrics for a polygon.
@@ -96,7 +111,7 @@ pub fn gen_svg_card(
     is_bbox: bool,
 ) -> String {
     let (mut min_x, mut min_y, mut max_x, mut max_y) = get_polygon_bounds(poly);
-    
+
     if let Some(rp) = rect_polygon {
         for c in rp.exterior().coords() {
             min_x = min_x.min(c.x);
@@ -105,28 +120,34 @@ pub fn gen_svg_card(
             max_y = max_y.max(c.y);
         }
     }
-    
+
     for obs in obstacles {
         match obs {
             ige_core::ObstacleInput::Point(c) => {
-                min_x = min_x.min(c.x); min_y = min_y.min(c.y);
-                max_x = max_x.max(c.x); max_y = max_y.max(c.y);
+                min_x = min_x.min(c.x);
+                min_y = min_y.min(c.y);
+                max_x = max_x.max(c.x);
+                max_y = max_y.max(c.y);
             }
             ige_core::ObstacleInput::Line(ls) => {
                 for c in ls.coords() {
-                    min_x = min_x.min(c.x); min_y = min_y.min(c.y);
-                    max_x = max_x.max(c.x); max_y = max_y.max(c.y);
+                    min_x = min_x.min(c.x);
+                    min_y = min_y.min(c.y);
+                    max_x = max_x.max(c.x);
+                    max_y = max_y.max(c.y);
                 }
             }
             ige_core::ObstacleInput::Polygon(p) => {
                 for c in p.exterior().coords() {
-                    min_x = min_x.min(c.x); min_y = min_y.min(c.y);
-                    max_x = max_x.max(c.x); max_y = max_y.max(c.y);
+                    min_x = min_x.min(c.x);
+                    min_y = min_y.min(c.y);
+                    max_x = max_x.max(c.x);
+                    max_y = max_y.max(c.y);
                 }
             }
         }
     }
-    
+
     let poly_area = poly.unsigned_area();
 
     let svg_size = 200.0;
@@ -144,48 +165,112 @@ pub fn gen_svg_card(
 
     let to_svg = |x: f64, y: f64| (ox + (x - min_x) * scale, oy + (y - min_y) * scale);
 
-    // Draw obstacle elements for LER mode
+    // Draw obstacle elements
     let obstacle_svg: String = if use_ler {
         let mut els = vec![];
         for obs in obstacles {
             match obs {
                 ige_core::ObstacleInput::Point(c) => {
                     let (sx, sy) = to_svg(c.x, c.y);
-                    els.push(format!(r#"<circle class="obstacle-point" cx="{:.1}" cy="{:.1}" r="2.5"/>"#, sx, sy));
+                    els.push(format!(
+                        r#"<circle class="obstacle-point" cx="{:.1}" cy="{:.1}" r="2"/>"#,
+                        sx, sy
+                    ));
                 }
                 ige_core::ObstacleInput::Line(ls) => {
-                    let coords: Vec<(f64, f64)> = ls.coords().map(|c| to_svg(c.x, c.y)).collect();
-                    if coords.len() >= 2 {
-                        let pts: String = coords.iter()
-                            .map(|(x, y)| format!("{:.1},{:.1}", x, y))
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        els.push(format!(r#"<polyline class="obstacle-line" points="{}"/>"#, pts));
-                    }
-                }
-                ige_core::ObstacleInput::Polygon(p) => {
-                    let pts: String = p.exterior().coords()
-                        .map(|c| { let (sx, sy) = to_svg(c.x, c.y); format!("{:.1},{:.1}", sx, sy) })
+                    let pts: String = ls
+                        .coords()
+                        .map(|c| {
+                            let (sx, sy) = to_svg(c.x, c.y);
+                            format!("{:.1},{:.1}", sx, sy)
+                        })
                         .collect::<Vec<_>>()
                         .join(" ");
-                    els.push(format!(r#"<polygon class="obstacle-polygon" points="{}"/>"#, pts));
+                    els.push(format!(
+                        r#"<polyline class="obstacle-line" points="{}"/>"#,
+                        pts
+                    ));
+                }
+                ige_core::ObstacleInput::Polygon(p) => {
+                    let pts: String = p
+                        .exterior()
+                        .coords()
+                        .map(|c| {
+                            let (sx, sy) = to_svg(c.x, c.y);
+                            format!("{:.1},{:.1}", sx, sy)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    els.push(format!(
+                        r#"<polygon class="obstacle-polygon" points="{}"/>"#,
+                        pts
+                    ));
                 }
             }
         }
         els.join("")
     } else {
-        String::new()
+        // LIR / MIC / NESTING / OBB modes: render obstacles as their actual shapes (skip raw point data)
+        let mut els = vec![];
+        for obs in obstacles {
+            match obs {
+                ige_core::ObstacleInput::Polygon(p) => {
+                    let pts: String = p
+                        .exterior()
+                        .coords()
+                        .map(|c| {
+                            let (sx, sy) = to_svg(c.x, c.y);
+                            format!("{:.1},{:.1}", sx, sy)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    els.push(format!(
+                        r#"<polygon class="obstacle-polygon" points="{}"/>"#,
+                        pts
+                    ));
+                }
+                ige_core::ObstacleInput::Line(ls) => {
+                    let pts: String = ls
+                        .coords()
+                        .map(|c| {
+                            let (sx, sy) = to_svg(c.x, c.y);
+                            format!("{:.1},{:.1}", sx, sy)
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    els.push(format!(
+                        r#"<polyline class="obstacle-line" points="{}"/>"#,
+                        pts
+                    ));
+                }
+                ige_core::ObstacleInput::Point(_) => {} // skip — raw vertex data, not a true obstacle shape
+            }
+        }
+        els.join("")
     };
 
-    let ext_pts: String = poly.exterior().0.iter()
-        .map(|c| { let (sx, sy) = to_svg(c.x, c.y); format!("{:.1},{:.1}", sx, sy) })
+    let ext_pts: String = poly
+        .exterior()
+        .0
+        .iter()
+        .map(|c| {
+            let (sx, sy) = to_svg(c.x, c.y);
+            format!("{:.1},{:.1}", sx, sy)
+        })
         .collect::<Vec<_>>()
         .join(" ");
 
-    let holes_svg: String = poly.interiors().iter()
+    let holes_svg: String = poly
+        .interiors()
+        .iter()
         .map(|hole| {
-            let pts: String = hole.0.iter()
-                .map(|c| { let (sx, sy) = to_svg(c.x, c.y); format!("{:.1},{:.1}", sx, sy) })
+            let pts: String = hole
+                .0
+                .iter()
+                .map(|c| {
+                    let (sx, sy) = to_svg(c.x, c.y);
+                    format!("{:.1},{:.1}", sx, sy)
+                })
                 .collect::<Vec<_>>()
                 .join(" ");
             format!(r#"<polygon class="hole" points="{}"/>"#, pts)
@@ -194,21 +279,48 @@ pub fn gen_svg_card(
 
     let (rect_svg, extra) = match rect_polygon {
         Some(rp) => {
-            let rpts: String = rp.exterior().0.iter()
-                .map(|c| { let (sx, sy) = to_svg(c.x, c.y); format!("{:.1},{:.1}", sx, sy) })
+            let rpts: String = rp
+                .exterior()
+                .0
+                .iter()
+                .map(|c| {
+                    let (sx, sy) = to_svg(c.x, c.y);
+                    format!("{:.1},{:.1}", sx, sy)
+                })
                 .collect::<Vec<_>>()
                 .join(" ");
-            let cls = if best_effort { "rect best-effort" } else { "rect" };
-            let ang_s = if angle_deg.abs() > 0.01 { format!("Angle: {:.1}°<br/>", angle_deg) } else { String::new() };
+            let cls = if best_effort {
+                "rect best-effort"
+            } else {
+                "rect"
+            };
+            let ang_s = if angle_deg.abs() > 0.01 {
+                format!("Angle: {:.1}°<br/>", angle_deg)
+            } else {
+                String::new()
+            };
             let be_s = if best_effort { "best-effort<br/>" } else { "" };
-            (format!(r#"<polygon class="{}" points="{}"/>"#, cls, rpts), format!("{}{}", ang_s, be_s))
+            (
+                format!(r#"<polygon class="{}" points="{}"/>"#, cls, rpts),
+                format!("{}{}", ang_s, be_s),
+            )
         }
         None => (String::new(), String::new()),
     };
 
-    let ratio = if poly_area > 0.0 { rect_area / poly_area * 100.0 } else { 0.0 };
+    let ratio = if poly_area > 0.0 {
+        rect_area / poly_area * 100.0
+    } else {
+        0.0
+    };
 
-    let poly_cls = if is_bbox { "bbox-polygon" } else { "polygon" };
+    let poly_cls = if use_ler {
+        "bbox-polygon"
+    } else if is_bbox {
+        "bbox-polygon"
+    } else {
+        "polygon"
+    };
     format!(
         r#"<div class="card">
             <svg viewBox="0 0 {s:.0} {s:.0}">
@@ -272,15 +384,28 @@ pub fn gen_mic_card(
 
     let to_svg = |x: f64, y: f64| (ox + (x - min_x) * scale, oy + (y - min_y) * scale);
 
-    let ext_pts: String = poly.exterior().0.iter()
-        .map(|c| { let (sx, sy) = to_svg(c.x, c.y); format!("{sx:.1},{sy:.1}") })
+    let ext_pts: String = poly
+        .exterior()
+        .0
+        .iter()
+        .map(|c| {
+            let (sx, sy) = to_svg(c.x, c.y);
+            format!("{sx:.1},{sy:.1}")
+        })
         .collect::<Vec<_>>()
         .join(" ");
 
-    let holes_svg: String = poly.interiors().iter()
+    let holes_svg: String = poly
+        .interiors()
+        .iter()
         .map(|hole| {
-            let pts: String = hole.0.iter()
-                .map(|c| { let (sx, sy) = to_svg(c.x, c.y); format!("{sx:.1},{sy:.1}") })
+            let pts: String = hole
+                .0
+                .iter()
+                .map(|c| {
+                    let (sx, sy) = to_svg(c.x, c.y);
+                    format!("{sx:.1},{sy:.1}")
+                })
                 .collect::<Vec<_>>()
                 .join(" ");
             format!(r#"<polygon class="hole" points="{pts}"/>"#)
@@ -329,7 +454,10 @@ pub fn gen_mic_card(
             exact_ms, geos_ms, label
         )
     } else {
-        format!("Exact: {:.2}ms &nbsp; GEOS: {:.2}ms<br/>", exact_ms, geos_ms)
+        format!(
+            "Exact: {:.2}ms &nbsp; GEOS: {:.2}ms<br/>",
+            exact_ms, geos_ms
+        )
     };
 
     let rel_info = match (exact, geos) {

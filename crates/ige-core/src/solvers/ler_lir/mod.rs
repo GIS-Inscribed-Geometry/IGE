@@ -5,8 +5,8 @@
 
 pub mod combined;
 
-use geo_types::Polygon;
 use crate::shared::{Rectangle, Result};
+use geo_types::Polygon;
 
 /// Configuration for combined LER + LIR solvers.
 #[derive(Debug, Clone)]
@@ -102,7 +102,9 @@ pub fn solve_ler_lir(
     _obstacles: &[Polygon<f64>],
     _options: &LerLirOptions,
 ) -> Result<LerLirResult> {
-    Err(crate::shared::LirError::NotSupported("LER+LIR combined not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "LER+LIR combined not yet implemented".to_string(),
+    ))
 }
 
 /// Solve combined LER + LIR axis-aligned only.
@@ -121,5 +123,7 @@ pub fn solve_ler_lir_axis_aligned(
     _obstacles: &[Polygon<f64>],
     _options: &LerLirOptions,
 ) -> Result<LerLirResult> {
-    Err(crate::shared::LirError::NotSupported("LER+LIR axis-aligned not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "LER+LIR axis-aligned not yet implemented".to_string(),
+    ))
 }

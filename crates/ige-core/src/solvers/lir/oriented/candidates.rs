@@ -61,7 +61,11 @@ pub fn edge_candidate_angles(
                 let y2 = smoothed[idx + 1];
                 let d = (y2 - y0) / (2.0 * (2.0 * y1 - y2 - y0));
                 let clamped = (idx as f64 + d).clamp(0.0, 90.0);
-                if d.is_finite() && d.abs() < 1.0 { clamped } else { idx as f64 }
+                if d.is_finite() && d.abs() < 1.0 {
+                    clamped
+                } else {
+                    idx as f64
+                }
             } else {
                 idx as f64
             };
@@ -87,7 +91,7 @@ pub fn edge_candidate_angles(
 }
 
 /// Principal Component Analysis (PCA) to extract primary elongation axes.
-/// 
+///
 /// Computes the covariance matrix of polygon vertices and extracts the
 /// primary (longest) and secondary axes via eigendecomposition of the 2x2 covariance.
 /// Returns angles (in degrees, 0-90) corresponding to these axes.
@@ -230,7 +234,10 @@ mod tests {
         );
         let angles = edge_candidate_angles(&poly, 4.0, 12);
         assert!(angles.iter().any(|&a| a.abs() < 0.5), "must include 0deg");
-        assert!(angles.iter().any(|&a| (a - 45.0).abs() < 0.5), "must include 45deg");
+        assert!(
+            angles.iter().any(|&a| (a - 45.0).abs() < 0.5),
+            "must include 45deg"
+        );
     }
 
     #[test]

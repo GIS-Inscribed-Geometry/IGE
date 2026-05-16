@@ -7,8 +7,8 @@
 pub mod axis_aligned;
 pub mod oriented;
 
-use geo_types::{Polygon, LineString};
 use crate::shared::{Rectangle, Result};
+use geo_types::{LineString, Polygon};
 
 /// Configuration for LER solvers.
 #[derive(Debug, Clone)]
@@ -105,7 +105,13 @@ pub fn solve_ler_axis_aligned_with_lines(
     line_thickness: f64,
     options: &LerOptions,
 ) -> Result<LerResult> {
-    super::ler::axis_aligned::solve_ler_axis_aligned_with_lines(poly, polygon_obstacles, line_obstacles, line_thickness, options)
+    super::ler::axis_aligned::solve_ler_axis_aligned_with_lines(
+        poly,
+        polygon_obstacles,
+        line_obstacles,
+        line_thickness,
+        options,
+    )
 }
 
 /// Solve using exact O(n log² n) divide-and-conquer for point obstacles.
@@ -167,7 +173,21 @@ pub fn solve_ler_axis_aligned_mixed(
     super::ler::axis_aligned::solve_ler_axis_aligned_mixed(poly, obstacles, options)
 }
 
+/// Sweep solver for mixed obstacles (bypasses DC shortcut).
+/// Always uses the sweep solver regardless of obstacle types.
+pub fn solve_ler_axis_aligned_mixed_sweep(
+    poly: &Polygon<f64>,
+    obstacles: &[axis_aligned::ObstacleInput],
+    options: &LerOptions,
+) -> Result<LerResult> {
+    super::ler::axis_aligned::solve_ler_axis_aligned_mixed_sweep(poly, obstacles, options)
+}
+
 /// Solve largest empty rectangle with free orientation.
+///
+/// Uses a coarse-to-fine pipeline with free-space SDF expansion
+/// and certification. The container polygon defines the free space,
+/// and obstacle polygons are avoided.
 ///
 /// # Arguments
 /// * `poly` - Input polygon defining the free space
@@ -177,9 +197,9 @@ pub fn solve_ler_axis_aligned_mixed(
 /// # Returns
 /// A `LerResult` with the largest empty rectangle.
 pub fn solve_ler_oriented(
-    _poly: &Polygon<f64>,
-    _obstacles: &[Polygon<f64>],
-    _options: &LerOptions,
+    poly: &Polygon<f64>,
+    obstacles: &[Polygon<f64>],
+    options: &LerOptions,
 ) -> Result<LerResult> {
-    Err(crate::shared::LirError::NotSupported("LER oriented not yet implemented".to_string()))
+    oriented::solve_ler_oriented(poly, obstacles, options)
 }

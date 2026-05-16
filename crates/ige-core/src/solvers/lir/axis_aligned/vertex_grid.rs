@@ -33,7 +33,9 @@ fn largest_rect_in_histogram(
         let h = if col < n { heights[col] } else { 0 };
         let mut start = col;
         while let Some(&(sc, sh)) = stack.last() {
-            if sh <= h { break; }
+            if sh <= h {
+                break;
+            }
             stack.pop();
             let x0 = xs[sc];
             let x1 = xs[col.min(xs.len() - 1)];
@@ -54,7 +56,13 @@ fn largest_rect_in_histogram(
             stack.push((start, h));
         }
     }
-    (best_rect.0, best_rect.1, best_rect.2, best_rect.3, best_area)
+    (
+        best_rect.0,
+        best_rect.1,
+        best_rect.2,
+        best_rect.3,
+        best_area,
+    )
 }
 
 fn subdivide_coords(coords: &[f64], levels: u32) -> Vec<f64> {
@@ -87,9 +95,10 @@ fn compute_row_intervals(poly: &Polygon<f64>, xs: &[f64], ys: &[f64]) -> Vec<Vec
 
     let mut intervals: Vec<Vec<(usize, usize)>> = vec![vec![]; n_rows];
 
-    let exterior: Vec<(f64, f64)> = poly.exterior().0.iter()
-        .map(|c| (c.x, c.y)).collect();
-    let interiors: Vec<Vec<(f64, f64)>> = poly.interiors().iter()
+    let exterior: Vec<(f64, f64)> = poly.exterior().0.iter().map(|c| (c.x, c.y)).collect();
+    let interiors: Vec<Vec<(f64, f64)>> = poly
+        .interiors()
+        .iter()
         .map(|ring| ring.0.iter().map(|c| (c.x, c.y)).collect())
         .collect();
 
@@ -129,7 +138,9 @@ fn compute_row_intervals(poly: &Polygon<f64>, xs: &[f64], ys: &[f64]) -> Vec<Vec
                 for col in 0..n_cols {
                     let cx = (xs[col] + xs[col + 1]) * 0.5;
                     if cx > x_left && cx < x_right {
-                        if col_start.is_none() { col_start = Some(col); }
+                        if col_start.is_none() {
+                            col_start = Some(col);
+                        }
                         col_end = Some(col + 1);
                     }
                 }
@@ -160,7 +171,14 @@ impl Default for AxisAlignedOptions {
     }
 }
 
-fn clamp_aspect_ratio(x0: f64, y0: f64, x1: f64, y1: f64, max_ratio: f64, min_ratio: f64) -> (f64, f64, f64, f64) {
+fn clamp_aspect_ratio(
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+    max_ratio: f64,
+    min_ratio: f64,
+) -> (f64, f64, f64, f64) {
     let rw = x1 - x0;
     let rh = y1 - y0;
     if rw <= 0.0 || rh <= 0.0 {
@@ -214,7 +232,13 @@ pub fn solve_vertex_grid(poly: &Polygon<f64>, options: &AxisAlignedOptions) -> O
     // Adaptive sub-division: more levels for low vertex-count polygons to ensure
     // sufficient grid resolution for the LRIH to find the optimal rectangle.
     let n_unique = xs.len().min(ys.len());
-    let levels = if n_unique <= 4 { crate::tuning::AA_SUBDIV_LEVELS_HIGH as u32 } else if n_unique <= crate::tuning::AA_SMALL_VERTEX_CUTOFF { crate::tuning::AA_SUBDIV_LEVELS_MED as u32 } else { crate::tuning::AA_SUBDIV_LEVELS_LOW as u32 };
+    let levels = if n_unique <= 4 {
+        crate::tuning::AA_SUBDIV_LEVELS_HIGH as u32
+    } else if n_unique <= crate::tuning::AA_SMALL_VERTEX_CUTOFF {
+        crate::tuning::AA_SUBDIV_LEVELS_MED as u32
+    } else {
+        crate::tuning::AA_SUBDIV_LEVELS_LOW as u32
+    };
 
     xs = subdivide_coords(&xs, levels);
     ys = subdivide_coords(&ys, levels);
@@ -269,15 +293,27 @@ pub fn solve_vertex_grid(poly: &Polygon<f64>, options: &AxisAlignedOptions) -> O
         let (x0, y0, x1, y1, area) = largest_rect_in_histogram(&heights, &xs, &ys, row);
         if area > best_area {
             best_area = area;
-            let (cx0, cy0, cx1, cy1) = clamp_aspect_ratio(x0, y0, x1, y1, options.max_ratio, options.min_ratio);
-            best_rect = Some(Rectangle { x_min: cx0, y_min: cy0, x_max: cx1, y_max: cy1 });
+            let (cx0, cy0, cx1, cy1) =
+                clamp_aspect_ratio(x0, y0, x1, y1, options.max_ratio, options.min_ratio);
+            best_rect = Some(Rectangle {
+                x_min: cx0,
+                y_min: cy0,
+                x_max: cx1,
+                y_max: cy1,
+            });
         }
     }
 
     // Stage 3 -- geometric verification + per-side contraction
     let contracted = best_rect.and_then(|r| {
-        contract_rect_to_boundary(poly, r.x_min, r.y_min, r.x_max, r.y_max)
-            .map(|(x0, y0, x1, y1)| Rectangle { x_min: x0, y_min: y0, x_max: x1, y_max: y1 })
+        contract_rect_to_boundary(poly, r.x_min, r.y_min, r.x_max, r.y_max).map(
+            |(x0, y0, x1, y1)| Rectangle {
+                x_min: x0,
+                y_min: y0,
+                x_max: x1,
+                y_max: y1,
+            },
+        )
     });
 
     // Stage 4 -- bounding-box fallback: start from the full axis-aligned bounding
@@ -291,20 +327,41 @@ pub fn solve_vertex_grid(poly: &Polygon<f64>, options: &AxisAlignedOptions) -> O
         if x1 - x0 < 1e-12 || y1 - y0 < 1e-12 {
             return None;
         }
-        contract_rect_to_boundary(poly, x0, y0, x1, y1)
-            .map(|(x0, y0, x1, y1)| Rectangle { x_min: x0, y_min: y0, x_max: x1, y_max: y1 })
+        contract_rect_to_boundary(poly, x0, y0, x1, y1).map(|(x0, y0, x1, y1)| Rectangle {
+            x_min: x0,
+            y_min: y0,
+            x_max: x1,
+            y_max: y1,
+        })
     });
 
     match (contracted, bb_candidate) {
         (Some(vg), Some(bb)) => {
-            if bb.area() > vg.area() { Some(bb) } else { Some(vg) }
+            if bb.area() > vg.area() {
+                Some(bb)
+            } else {
+                Some(vg)
+            }
         }
         (Some(vg), None) => Some(vg),
         (None, Some(bb)) => Some(bb),
         (None, None) => None,
-    }.map(|r| {
-        let (x0, y0, x1, y1) = clamp_aspect_ratio(r.x_min, r.y_min, r.x_max, r.y_max, options.max_ratio, options.min_ratio);
-        Rectangle { x_min: x0, y_min: y0, x_max: x1, y_max: y1 }
+    }
+    .map(|r| {
+        let (x0, y0, x1, y1) = clamp_aspect_ratio(
+            r.x_min,
+            r.y_min,
+            r.x_max,
+            r.y_max,
+            options.max_ratio,
+            options.min_ratio,
+        );
+        Rectangle {
+            x_min: x0,
+            y_min: y0,
+            x_max: x1,
+            y_max: y1,
+        }
     })
 }
 

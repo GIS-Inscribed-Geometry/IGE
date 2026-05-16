@@ -4,12 +4,12 @@
 //! of rectangle candidates in parallel. Falls back gracefully to CPU when GPU
 //! is unavailable or disabled.
 
+use crate::solvers::lir::axis_aligned::{polygon_sdf, rect_fully_contained, rect_sdf_max};
 use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
 use geo::BoundingRect;
 use geo_types::Polygon;
 use wgpu::util::DeviceExt;
-use crate::solvers::lir::axis_aligned::{polygon_sdf, rect_fully_contained, rect_sdf_max};
 
 /// Maximum polygon vertices supported by GPU shader.
 /// Must match `array<f32, 4096>` in WGSL -- 4096 floats = 2048 (x,y) pairs.
@@ -122,7 +122,12 @@ impl GpuCoordTransform {
         let bb = polygon
             .bounding_rect()
             .ok_or_else(|| anyhow::anyhow!("Polygon has no bounding rectangle"))?;
-        Ok(Self::from_bbox(bb.min().x, bb.min().y, bb.max().x, bb.max().y))
+        Ok(Self::from_bbox(
+            bb.min().x,
+            bb.min().y,
+            bb.max().x,
+            bb.max().y,
+        ))
     }
 
     #[inline]
@@ -200,7 +205,7 @@ pub struct GpuContext {
 impl GpuContext {
     /// Initialize GPU context (blocking)
     pub fn new() -> Result<Self> {
-let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             flags: wgpu::InstanceFlags::default(),
             backend_options: wgpu::BackendOptions::default(),
@@ -212,18 +217,18 @@ let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: None,
             force_fallback_adapter: false,
-        })).map_err(|e| anyhow::anyhow!("Failed to find suitable GPU adapter: {}", e))?;
+        }))
+        .map_err(|e| anyhow::anyhow!("Failed to find suitable GPU adapter: {}", e))?;
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("LIRiAP GPU Device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                memory_hints: wgpu::MemoryHints::default(),
-                experimental_features: wgpu::ExperimentalFeatures::default(),
-                trace: wgpu::Trace::default(),
-            },
-        )).map_err(|e| anyhow::anyhow!("Failed to create device: {}", e))?;
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("LIRiAP GPU Device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            memory_hints: wgpu::MemoryHints::default(),
+            experimental_features: wgpu::ExperimentalFeatures::default(),
+            trace: wgpu::Trace::default(),
+        }))
+        .map_err(|e| anyhow::anyhow!("Failed to create device: {}", e))?;
 
         // Load and compile rect validation shader
         let rect_shader = include_str!("shaders/oriented_lir.wgsl");
@@ -392,7 +397,11 @@ let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         })
     }
 
-    fn upload_polygon(&self, polygon: &Polygon<f64>, tx: GpuCoordTransform) -> Result<wgpu::Buffer> {
+    fn upload_polygon(
+        &self,
+        polygon: &Polygon<f64>,
+        tx: GpuCoordTransform,
+    ) -> Result<wgpu::Buffer> {
         if !polygon.interiors().is_empty() {
             anyhow::bail!("GPU kernels currently support polygons without holes; use CPU backend");
         }
@@ -429,7 +438,10 @@ let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         buffer_slice.map_async(wgpu::MapMode::Read, move |result| {
             tx.send(result).unwrap();
         });
-        let _ = self.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
         rx.recv().unwrap()?;
         let data = buffer_slice.get_mapped_range();
         let result: Vec<T> = bytemuck::cast_slice(&data).to_vec();
@@ -673,7 +685,9 @@ impl GpuContext {
         let mut headers = Vec::<GridPolyHeader>::new();
         for poly in polygons {
             if !poly.interiors().is_empty() {
-                anyhow::bail!("GPU grid batch currently supports polygons without holes; use CPU backend");
+                anyhow::bail!(
+                    "GPU grid batch currently supports polygons without holes; use CPU backend"
+                );
             }
             let bb = poly
                 .bounding_rect()
@@ -828,7 +842,8 @@ fn evaluate_grid_batch_cpu(polygons: &[&Polygon<f64>], grid_steps: u32) -> Resul
                 let cx = bb.min().x + span_x * (gx as f64 + 0.5) / grid_steps as f64;
                 let cy = bb.min().y + span_y * (gy as f64 + 0.5) / grid_steps as f64;
                 let idx = pi * cells_per_poly + gy as usize * grid_steps as usize + gx as usize;
-                out[idx] = u32::from(polygon_sdf(poly, cx, cy) <= crate::tuning::CONTAIN_BOUNDARY_EPS);
+                out[idx] =
+                    u32::from(polygon_sdf(poly, cx, cy) <= crate::tuning::CONTAIN_BOUNDARY_EPS);
             }
         }
     }
@@ -843,7 +858,8 @@ pub fn evaluate_candidates_with_backend(
     match backend {
         WorkloadBackend::Cpu => Ok(evaluate_candidates_cpu(polygon, candidates)),
         WorkloadBackend::Gpu => {
-            let ctx = get_gpu_context().ok_or_else(|| anyhow::anyhow!("GPU context unavailable"))?;
+            let ctx =
+                get_gpu_context().ok_or_else(|| anyhow::anyhow!("GPU context unavailable"))?;
             ctx.evaluate_candidates(polygon, candidates)
         }
     }
@@ -857,7 +873,8 @@ pub fn evaluate_rect_sdf_batch_with_backend(
     match backend {
         WorkloadBackend::Cpu => Ok(evaluate_rect_sdf_batch_cpu(polygon, rects)),
         WorkloadBackend::Gpu => {
-            let ctx = get_gpu_context().ok_or_else(|| anyhow::anyhow!("GPU context unavailable"))?;
+            let ctx =
+                get_gpu_context().ok_or_else(|| anyhow::anyhow!("GPU context unavailable"))?;
             ctx.evaluate_rect_sdf_batch(polygon, rects)
         }
     }
@@ -874,12 +891,14 @@ pub fn evaluate_grid_mask_with_engine(
             Ok(cpu.into_iter().map(|v| v != 0).collect())
         }
         GridMaskEngine::GpuBatch => {
-            let ctx = get_gpu_context().ok_or_else(|| anyhow::anyhow!("GPU context unavailable"))?;
+            let ctx =
+                get_gpu_context().ok_or_else(|| anyhow::anyhow!("GPU context unavailable"))?;
             let gpu = ctx.evaluate_grid_batch(&[polygon], grid_steps)?;
             Ok(gpu.into_iter().map(|v| v != 0).collect())
         }
         GridMaskEngine::GpuSdf => {
-            let ctx = get_gpu_context().ok_or_else(|| anyhow::anyhow!("GPU context unavailable"))?;
+            let ctx =
+                get_gpu_context().ok_or_else(|| anyhow::anyhow!("GPU context unavailable"))?;
             let bb = polygon
                 .bounding_rect()
                 .ok_or_else(|| anyhow::anyhow!("Polygon has no bounding rectangle"))?;
@@ -953,8 +972,10 @@ mod tests {
             RectCandidate::new(-1.0, -1.0, 5.0, 5.0),
         ];
 
-        let cpu = evaluate_candidates_with_backend(&poly, &candidates, WorkloadBackend::Cpu).unwrap();
-        let gpu = evaluate_candidates_with_backend(&poly, &candidates, WorkloadBackend::Gpu).unwrap();
+        let cpu =
+            evaluate_candidates_with_backend(&poly, &candidates, WorkloadBackend::Cpu).unwrap();
+        let gpu =
+            evaluate_candidates_with_backend(&poly, &candidates, WorkloadBackend::Gpu).unwrap();
         assert_eq!(cpu.len(), gpu.len());
         for (a, b) in cpu.iter().zip(gpu.iter()) {
             assert_eq!(a.is_valid, b.is_valid);
@@ -969,7 +990,8 @@ mod tests {
         }
         let poly = unit_square();
         let cpu = evaluate_grid_mask_with_engine(&poly, 32, GridMaskEngine::Cpu).unwrap();
-        let gpu_batch = evaluate_grid_mask_with_engine(&poly, 32, GridMaskEngine::GpuBatch).unwrap();
+        let gpu_batch =
+            evaluate_grid_mask_with_engine(&poly, 32, GridMaskEngine::GpuBatch).unwrap();
         let gpu_sdf = evaluate_grid_mask_with_engine(&poly, 32, GridMaskEngine::GpuSdf).unwrap();
         assert_eq!(cpu, gpu_batch);
         assert_eq!(cpu, gpu_sdf);

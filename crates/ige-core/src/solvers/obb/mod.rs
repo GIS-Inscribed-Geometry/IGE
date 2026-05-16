@@ -8,8 +8,8 @@
 
 pub mod solver;
 
-use geo_types::{Point, Polygon};
 use crate::shared::Result;
+use geo_types::{Point, Polygon};
 
 /// Configuration for OBB solvers.
 #[derive(Debug, Clone)]
@@ -94,11 +94,10 @@ impl Default for ObbResult {
 ///
 /// # Returns
 /// An `ObbResult` with the minimal bounding box.
-pub fn solve_obb(
-    _poly: &Polygon<f64>,
-    _options: &ObbOptions,
-) -> Result<ObbResult> {
-    Err(crate::shared::LirError::NotSupported("OBB not yet implemented".to_string()))
+pub fn solve_obb(_poly: &Polygon<f64>, _options: &ObbOptions) -> Result<ObbResult> {
+    Err(crate::shared::LirError::NotSupported(
+        "OBB not yet implemented".to_string(),
+    ))
 }
 
 /// Solve for minimal OBB with aspect ratio constraints.
@@ -109,9 +108,8 @@ pub fn solve_obb(
 ///
 /// # Returns
 /// An `ObbResult` with the constrained bounding box.
-pub fn solve_obb_constrained(
-    _poly: &Polygon<f64>,
-    _options: &ObbOptions,
-) -> Result<ObbResult> {
-    Err(crate::shared::LirError::NotSupported("OBB constrained not yet implemented".to_string()))
+pub fn solve_obb_constrained(_poly: &Polygon<f64>, _options: &ObbOptions) -> Result<ObbResult> {
+    Err(crate::shared::LirError::NotSupported(
+        "OBB constrained not yet implemented".to_string(),
+    ))
 }

@@ -9,8 +9,17 @@ const SIMPLIFY_THRESHOLD: usize = 300;
 const SIMPLIFY_TOL_FRAC: f64 = 0.001;
 
 pub fn prepare_polygon(poly: &Polygon<f64>) -> Option<()> {
-    let n_unique = poly.exterior().0.windows(2).filter(|w| w[0] != w[1]).count()
-        + if poly.exterior().0.first() != poly.exterior().0.last() { 1 } else { 0 };
+    let n_unique = poly
+        .exterior()
+        .0
+        .windows(2)
+        .filter(|w| w[0] != w[1])
+        .count()
+        + if poly.exterior().0.first() != poly.exterior().0.last() {
+            1
+        } else {
+            0
+        };
     if n_unique < 3 {
         return None;
     }

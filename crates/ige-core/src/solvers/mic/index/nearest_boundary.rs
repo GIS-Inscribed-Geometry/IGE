@@ -118,12 +118,7 @@ impl GridIndex {
     }
 
     #[inline]
-    fn nearest_via_grid(
-        &self,
-        segments: &SegmentIndex,
-        x: f64,
-        y: f64,
-    ) -> Option<(f64, usize)> {
+    fn nearest_via_grid(&self, segments: &SegmentIndex, x: f64, y: f64) -> Option<(f64, usize)> {
         let (cx, cy) = self.cell_of(x, y)?;
 
         let mut best_sq = f64::INFINITY;
@@ -370,9 +365,12 @@ fn linear_scan_nearest(
 
     for seg_idx in 0..n {
         let bbox_lb = point_to_bbox_distance_sq(
-            x, y,
-            segments.bbox_minx[seg_idx], segments.bbox_miny[seg_idx],
-            segments.bbox_maxx[seg_idx], segments.bbox_maxy[seg_idx],
+            x,
+            y,
+            segments.bbox_minx[seg_idx],
+            segments.bbox_miny[seg_idx],
+            segments.bbox_maxx[seg_idx],
+            segments.bbox_maxy[seg_idx],
         );
         if bbox_lb > best_sq {
             continue;
@@ -396,9 +394,12 @@ fn linear_supporting_segments(
     let mut supports = Vec::new();
     for seg_idx in 0..segments.len() {
         let bbox_lb = point_to_bbox_distance_sq(
-            x, y,
-            segments.bbox_minx[seg_idx], segments.bbox_miny[seg_idx],
-            segments.bbox_maxx[seg_idx], segments.bbox_maxy[seg_idx],
+            x,
+            y,
+            segments.bbox_minx[seg_idx],
+            segments.bbox_miny[seg_idx],
+            segments.bbox_maxx[seg_idx],
+            segments.bbox_maxy[seg_idx],
         );
         if bbox_lb > max_dist_sq {
             continue;
@@ -438,7 +439,10 @@ impl NearestBoundaryIndex {
         // Use SIMD batch when segment count is reasonable (faster than grid for small polygons)
         #[cfg(feature = "simd")]
         if n <= 256 {
-            return Some(self.segments.batch_point_segment_distance_sq_with_index(x, y, 0, n));
+            return Some(
+                self.segments
+                    .batch_point_segment_distance_sq_with_index(x, y, 0, n),
+            );
         }
         #[cfg(not(feature = "simd"))]
         if n <= 32 {
@@ -450,22 +454,24 @@ impl NearestBoundaryIndex {
         self.grid.nearest_via_grid(&self.segments, x, y)
     }
 
-    pub fn supporting_segments(
-        &self,
-        x: f64,
-        y: f64,
-        min_dist_sq: f64,
-        eps: f64,
-    ) -> Vec<usize> {
+    pub fn supporting_segments(&self, x: f64, y: f64, min_dist_sq: f64, eps: f64) -> Vec<usize> {
         let max_dist_sq = min_dist_sq + eps.abs().max(1e-14);
         if self.grid.nx == 0 {
             return linear_supporting_segments(&self.segments, x, y, max_dist_sq);
         }
-        self.grid.supporting_via_grid(&self.segments, x, y, max_dist_sq)
+        self.grid
+            .supporting_via_grid(&self.segments, x, y, max_dist_sq)
     }
 }
 
-fn point_to_bbox_distance_sq(x: f64, y: f64, min_x: f64, min_y: f64, max_x: f64, max_y: f64) -> f64 {
+fn point_to_bbox_distance_sq(
+    x: f64,
+    y: f64,
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+) -> f64 {
     let dx = if x < min_x {
         min_x - x
     } else if x > max_x {

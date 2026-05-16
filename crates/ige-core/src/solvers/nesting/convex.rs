@@ -3,9 +3,9 @@
 //! Solves the largest convex polygon inside a convex container.
 //! This is simpler than the general case.
 
-use geo_types::Polygon;
-use crate::shared::Result;
 use super::{NestingOptions, NestingResult};
+use crate::shared::Result;
+use geo_types::Polygon;
 
 /// Solve convex nesting using polygon offset approach.
 ///
@@ -14,7 +14,9 @@ pub fn solve_nesting_convex_offset(
     _container: &Polygon<f64>,
     _options: &NestingOptions,
 ) -> Result<NestingResult> {
-    Err(crate::shared::LirError::NotSupported("Nesting convex not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "Nesting convex not yet implemented".to_string(),
+    ))
 }
 
 /// Solve convex nesting using vertex insertion approach.
@@ -24,7 +26,9 @@ pub fn solve_nesting_convex_vertex(
     _container: &Polygon<f64>,
     _options: &NestingOptions,
 ) -> Result<NestingResult> {
-    Err(crate::shared::LirError::NotSupported("Nesting convex vertex not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "Nesting convex vertex not yet implemented".to_string(),
+    ))
 }
 
 #[cfg(test)]

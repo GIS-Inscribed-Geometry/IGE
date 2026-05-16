@@ -47,8 +47,8 @@ pub const AA_GRID_MAX_COORDS: usize = 51200;
 
 // -- Axis-Aligned GRID (lir_axis_aligned/*.rs) -------------------
 
-pub const AA_GRID_COARSE_STEPS: usize = 400;
-pub const AA_GRID_FINE_STEPS: usize = 400;
+pub const AA_GRID_COARSE_STEPS: usize = 32;
+pub const AA_GRID_FINE_STEPS: usize = 64;
 pub const AA_BCRS_MAX_COORDS: usize = 4096;
 pub const AA_BCRS_GRID_CAP: usize = 120;
 pub const AA_EXACT_BINARY_ITERS: usize = 40;
@@ -74,3 +74,8 @@ pub const MIC_EXT_SEGS_PER_RING: usize = 5;
 
 // -- Oriented expand (expand.rs) -------------------
 pub const EXPAND_MAX_SCALE_ITERS: usize = 36;
+
+// -- LER Oriented (ler/oriented/*.rs) ---------------------------------------
+pub const LER_ORIENTED_GRID_COARSE: usize = 60;
+pub const LER_ORIENTED_TOP_K: usize = 5;
+pub const LER_ORIENTED_MIN_ANGLES: usize = 30;

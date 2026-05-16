@@ -93,7 +93,8 @@ pub fn load_linestrings_clustered(path: Option<&str>) -> Vec<(usize, Vec<LineStr
         Some(f) => f.as_array().expect("Features is not array"),
         None => return Vec::new(),
     };
-    let mut cluster_map: std::collections::HashMap<usize, Vec<LineString<f64>>> = std::collections::HashMap::new();
+    let mut cluster_map: std::collections::HashMap<usize, Vec<LineString<f64>>> =
+        std::collections::HashMap::new();
     for f in features.iter() {
         let cluster_id = f
             .get("properties")
@@ -209,14 +210,17 @@ pub fn load_polygons_clustered(path: Option<&str>) -> Vec<(usize, Vec<Polygon<f6
         Some(f) => f.as_array().expect("Features is not array"),
         None => return Vec::new(),
     };
-    let mut cluster_map: std::collections::HashMap<usize, Vec<Polygon<f64>>> = std::collections::HashMap::new();
+    let mut cluster_map: std::collections::HashMap<usize, Vec<Polygon<f64>>> =
+        std::collections::HashMap::new();
     for f in features.iter() {
         let cluster_id = f
             .get("properties")
             .and_then(|p| p.get("cluster_id"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
-        let Some(geom) = f.get("geometry") else { continue; };
+        let Some(geom) = f.get("geometry") else {
+            continue;
+        };
         let polys = parse_feature_polygons(geom);
         for p in polys {
             cluster_map.entry(cluster_id).or_default().push(p);
@@ -235,13 +239,17 @@ pub fn polygon_cluster_bbox(polys: &[Polygon<f64>]) -> Option<(f64, f64, f64, f6
     let mut max_y = f64::MIN;
     for p in polys {
         for c in p.exterior().coords() {
-            min_x = min_x.min(c.x); min_y = min_y.min(c.y);
-            max_x = max_x.max(c.x); max_y = max_y.max(c.y);
+            min_x = min_x.min(c.x);
+            min_y = min_y.min(c.y);
+            max_x = max_x.max(c.x);
+            max_y = max_y.max(c.y);
         }
         for hole in p.interiors() {
             for c in hole.coords() {
-                min_x = min_x.min(c.x); min_y = min_y.min(c.y);
-                max_x = max_x.max(c.x); max_y = max_y.max(c.y);
+                min_x = min_x.min(c.x);
+                min_y = min_y.min(c.y);
+                max_x = max_x.max(c.x);
+                max_y = max_y.max(c.y);
             }
         }
     }

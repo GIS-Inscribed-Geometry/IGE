@@ -6,8 +6,8 @@
 pub mod convex;
 pub mod general;
 
-use geo_types::Polygon;
 use crate::shared::Result;
+use geo_types::Polygon;
 
 /// Configuration for nesting solvers.
 #[derive(Debug, Clone)]
@@ -78,7 +78,9 @@ pub fn solve_nesting(
     _container: &Polygon<f64>,
     _options: &NestingOptions,
 ) -> Result<NestingResult> {
-    Err(crate::shared::LirError::NotSupported("Nesting not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "Nesting not yet implemented".to_string(),
+    ))
 }
 
 /// Solve largest convex polygon inside convex polygon.
@@ -95,5 +97,7 @@ pub fn solve_nesting_convex(
     _container: &Polygon<f64>,
     _options: &NestingOptions,
 ) -> Result<NestingResult> {
-    Err(crate::shared::LirError::NotSupported("Nesting convex not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "Nesting convex not yet implemented".to_string(),
+    ))
 }

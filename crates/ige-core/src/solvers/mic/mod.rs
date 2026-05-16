@@ -112,7 +112,9 @@ pub fn maximum_inscribed_circle_multipolygon(
     opts: &MicOptions,
 ) -> Result<MicResult, MicError> {
     if multi.0.is_empty() {
-        return Err(MicError::InvalidInput("multipolygon has no components".to_string()));
+        return Err(MicError::InvalidInput(
+            "multipolygon has no components".to_string(),
+        ));
     }
 
     let mut best: Option<MicResult> = None;
@@ -139,10 +141,7 @@ pub fn maximum_inscribed_circle_multipolygon(
     best.ok_or_else(|| last_error.unwrap_or(MicError::NoCircleFound))
 }
 
-fn solve_on_host_polygon(
-    host: &HostPolygon,
-    opts: &MicOptions,
-) -> Result<MicResult, MicError> {
+fn solve_on_host_polygon(host: &HostPolygon, opts: &MicOptions) -> Result<MicResult, MicError> {
     // Phase 0: Try analytical fast path for simple shapes (triangle, rectangle, convex quad).
     // We intentionally do NOT dispatch arbitrary N-gons to fast_convex_n here:
     // real-world data has near-collinear reflex vertices and numerical noise that
@@ -154,8 +153,7 @@ fn solve_on_host_polygon(
             solver::exact::fast_triangle(host)
         } else if outer_len == 5 {
             // Rectangle (cheapest O(1)), then general convex quad (LP solver)
-            solver::exact::fast_rectangle(host)
-                .or_else(|| solver::exact::fast_convex_quad(host))
+            solver::exact::fast_rectangle(host).or_else(|| solver::exact::fast_convex_quad(host))
         } else {
             None
         };
@@ -169,8 +167,11 @@ fn solve_on_host_polygon(
             let seg_idx = input::SegmentIndex::from_host(host);
             let mut actual_sq = f64::INFINITY;
             for idx in 0..seg_idx.len() {
-                let d = seg_idx.point_segment_distance_sq(idx, result.center.x(), result.center.y());
-                if d < actual_sq { actual_sq = d; }
+                let d =
+                    seg_idx.point_segment_distance_sq(idx, result.center.x(), result.center.y());
+                if d < actual_sq {
+                    actual_sq = d;
+                }
             }
             let actual = actual_sq.sqrt();
             if actual > 0.0 && (result.radius - actual).abs() / actual < 0.01 {
@@ -182,7 +183,7 @@ fn solve_on_host_polygon(
     // Phase 1: Use grid solver for complex shapes - matches GEOS exactly and is much faster
     // Skip for FallbackOnly - let GEOS solve independently for comparison
     let use_grid = opts.engine != MicEngine::FallbackOnly;
-    
+
     if use_grid {
         // Use grid solver - now uses original polygon (no normalization)
         let workspace = MicWorkspace::new(host.clone())?;
@@ -190,7 +191,9 @@ fn solve_on_host_polygon(
         let diag = (bounds.2 - bounds.0).hypot(bounds.3 - bounds.1).max(1.0);
         let tolerance = (diag * 1e-7).max(1e-12);
 
-        if let Some(grid_result) = solve_grid(host, &workspace.pip_index, &workspace.nb_index, tolerance) {
+        if let Some(grid_result) =
+            solve_grid(host, &workspace.pip_index, &workspace.nb_index, tolerance)
+        {
             return Ok(grid_result);
         }
     }
@@ -203,9 +206,17 @@ fn solve_on_host_polygon(
                 Ok(w) => w,
                 Err(e) => {
                     #[cfg(feature = "geos")]
-                    { return run_geos(host, None, opts).map_err(|fe| MicError::GeosFailed(format!("workspace failed ({e}); fallback failed ({fe})"))); }
+                    {
+                        return run_geos(host, None, opts).map_err(|fe| {
+                            MicError::GeosFailed(format!(
+                                "workspace failed ({e}); fallback failed ({fe})"
+                            ))
+                        });
+                    }
                     #[cfg(not(feature = "geos"))]
-                    { return Err(e); }
+                    {
+                        return Err(e);
+                    }
                 }
             };
             match solve_exact(&mut workspace, opts) {
@@ -215,7 +226,9 @@ fn solve_on_host_polygon(
                     {
                         let seg_index = workspace.nb_index.segments().clone();
                         run_geos(host, Some(&seg_index), opts).map_err(|fallback_err| {
-                            MicError::GeosFailed(format!("exact failed ({e}); fallback failed ({fallback_err})"))
+                            MicError::GeosFailed(format!(
+                                "exact failed ({e}); fallback failed ({fallback_err})"
+                            ))
                         })
                     }
                     #[cfg(not(feature = "geos"))]
@@ -228,10 +241,7 @@ fn solve_on_host_polygon(
     }
 }
 
-fn run_exact(
-    host: &HostPolygon,
-    opts: &MicOptions,
-) -> Result<MicResult, MicError> {
+fn run_exact(host: &HostPolygon, opts: &MicOptions) -> Result<MicResult, MicError> {
     let mut workspace = MicWorkspace::new(host.clone())?;
     solve_exact(&mut workspace, opts).map_err(|err| MicError::ExactFailed(err.to_string()))
 }

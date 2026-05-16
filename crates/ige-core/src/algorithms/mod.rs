@@ -23,8 +23,8 @@ pub mod cpu {
 
     use super::*;
     use crate::shared::SolverOptions;
-    use crate::solvers::lir::oriented::{self, LirOrientedOptions};
     use crate::solvers::lir::axis_aligned::{self, AxisAlignedOptions};
+    use crate::solvers::lir::oriented::{self, LirOrientedOptions};
     use geo_types::Polygon;
 
     pub struct AxisAlignedSolver {

@@ -33,29 +33,31 @@ impl HostPolygon {
         let mut rings = Vec::with_capacity(1 + poly.interiors().len());
 
         // Exterior ring - store with closing point
-        let ext_coords: Vec<[f64; 2]> = poly.exterior().0.iter()
-            .map(|c| [c.x, c.y])
-            .collect();
+        let ext_coords: Vec<[f64; 2]> = poly.exterior().0.iter().map(|c| [c.x, c.y]).collect();
         let ext_start = coords.len();
         coords.extend_from_slice(&ext_coords);
         let ext_end = coords.len();
-        rings.push(RingMeta { start: ext_start, end: ext_end, is_hole: false });
+        rings.push(RingMeta {
+            start: ext_start,
+            end: ext_end,
+            is_hole: false,
+        });
 
         // Interior rings (holes)
         for hole in poly.interiors() {
-            let hole_coords: Vec<[f64; 2]> = hole.0.iter()
-                .map(|c| [c.x, c.y])
-                .collect();
+            let hole_coords: Vec<[f64; 2]> = hole.0.iter().map(|c| [c.x, c.y]).collect();
             let start = coords.len();
             coords.extend_from_slice(&hole_coords);
             let end = coords.len();
-            rings.push(RingMeta { start, end, is_hole: true });
+            rings.push(RingMeta {
+                start,
+                end,
+                is_hole: true,
+            });
         }
 
         if poly.unsigned_area() <= NORMALIZE_EPS {
-            return Err(MicError::InvalidInput(
-                "polygon area is zero".to_string(),
-            ));
+            return Err(MicError::InvalidInput("polygon area is zero".to_string()));
         }
 
         Ok(Self {
@@ -135,7 +137,9 @@ pub struct SegmentIndex {
 impl SegmentIndex {
     pub fn from_host(host: &HostPolygon) -> Self {
         // Collect ring data and flatten sequentially
-        let ring_data: Vec<_> = host.rings.iter()
+        let ring_data: Vec<_> = host
+            .rings
+            .iter()
             .enumerate()
             .map(|(rid, meta)| {
                 let ring = host.ring_coords(rid);
@@ -151,11 +155,20 @@ impl SegmentIndex {
                             continue;
                         }
                         edges.push((
-                            a[0], a[1], b[0], b[1],
-                            rid, eid, meta.is_hole,
-                            a[0].min(b[0]), a[0].max(b[0]),
-                            a[1].min(b[1]), a[1].max(b[1]),
-                            dx, dy, len_sq,
+                            a[0],
+                            a[1],
+                            b[0],
+                            b[1],
+                            rid,
+                            eid,
+                            meta.is_hole,
+                            a[0].min(b[0]),
+                            a[0].max(b[0]),
+                            a[1].min(b[1]),
+                            a[1].max(b[1]),
+                            dx,
+                            dy,
+                            len_sq,
                         ));
                     }
                 }
@@ -163,9 +176,7 @@ impl SegmentIndex {
             })
             .collect();
 
-        let flat_results: Vec<_> = ring_data.iter()
-            .flat_map(|edges| edges.iter())
-            .collect();
+        let flat_results: Vec<_> = ring_data.iter().flat_map(|edges| edges.iter()).collect();
 
         // Allocate exact capacity and pack
         let len = flat_results.len();
@@ -239,23 +250,46 @@ impl SegmentIndex {
 
     #[cfg(feature = "simd")]
     #[inline]
-    pub fn batch_point_segment_distance_sq(&self, px: f64, py: f64, start: usize, end: usize) -> f64 {
+    pub fn batch_point_segment_distance_sq(
+        &self,
+        px: f64,
+        py: f64,
+        start: usize,
+        end: usize,
+    ) -> f64 {
         use std::simd::f64x4;
         use std::simd::num::SimdFloat;
-        
+
         let x = f64x4::splat(px);
         let y = f64x4::splat(py);
-        
+
         let mut best = f64::INFINITY;
-        
+
         let mut i = start;
         while i + 4 <= end {
-            let ax = f64x4::from_array([self.ax[i], self.ax[i+1], self.ax[i+2], self.ax[i+3]]);
-            let ay = f64x4::from_array([self.ay[i], self.ay[i+1], self.ay[i+2], self.ay[i+3]]);
-            let dx = f64x4::from_array([self.dir_x[i], self.dir_x[i+1], self.dir_x[i+2], self.dir_x[i+3]]);
-            let dy = f64x4::from_array([self.dir_y[i], self.dir_y[i+1], self.dir_y[i+2], self.dir_y[i+3]]);
-            let ls = f64x4::from_array([self.len_sq[i], self.len_sq[i+1], self.len_sq[i+2], self.len_sq[i+3]]);
-            
+            let ax =
+                f64x4::from_array([self.ax[i], self.ax[i + 1], self.ax[i + 2], self.ax[i + 3]]);
+            let ay =
+                f64x4::from_array([self.ay[i], self.ay[i + 1], self.ay[i + 2], self.ay[i + 3]]);
+            let dx = f64x4::from_array([
+                self.dir_x[i],
+                self.dir_x[i + 1],
+                self.dir_x[i + 2],
+                self.dir_x[i + 3],
+            ]);
+            let dy = f64x4::from_array([
+                self.dir_y[i],
+                self.dir_y[i + 1],
+                self.dir_y[i + 2],
+                self.dir_y[i + 3],
+            ]);
+            let ls = f64x4::from_array([
+                self.len_sq[i],
+                self.len_sq[i + 1],
+                self.len_sq[i + 2],
+                self.len_sq[i + 3],
+            ]);
+
             let t = ((x - ax) * dx + (y - ay) * dy) / ls;
             let t = t.simd_clamp(f64x4::splat(0.0), f64x4::splat(1.0));
             let pdx = ax + t * dx;
@@ -263,18 +297,18 @@ impl SegmentIndex {
             let edx = x - pdx;
             let edy = y - pdy;
             let dist_sq = edx * edx + edy * edy;
-            
+
             best = best.min(dist_sq.reduce_min());
             i += 4;
         }
-        
+
         for j in i..end {
             let d = self.point_segment_distance_sq(j, px, py);
             if d < best {
                 best = d;
             }
         }
-        
+
         best
     }
 
@@ -292,7 +326,13 @@ impl SegmentIndex {
 
     #[cfg(feature = "simd")]
     #[inline]
-    pub fn batch_point_segment_distance_sq_with_index(&self, px: f64, py: f64, start: usize, end: usize) -> (f64, usize) {
+    pub fn batch_point_segment_distance_sq_with_index(
+        &self,
+        px: f64,
+        py: f64,
+        start: usize,
+        end: usize,
+    ) -> (f64, usize) {
         use std::simd::f64x4;
         use std::simd::num::SimdFloat;
 
@@ -304,11 +344,28 @@ impl SegmentIndex {
 
         let mut i = start;
         while i + 4 <= end {
-            let ax = f64x4::from_array([self.ax[i], self.ax[i+1], self.ax[i+2], self.ax[i+3]]);
-            let ay = f64x4::from_array([self.ay[i], self.ay[i+1], self.ay[i+2], self.ay[i+3]]);
-            let dx = f64x4::from_array([self.dir_x[i], self.dir_x[i+1], self.dir_x[i+2], self.dir_x[i+3]]);
-            let dy = f64x4::from_array([self.dir_y[i], self.dir_y[i+1], self.dir_y[i+2], self.dir_y[i+3]]);
-            let ls = f64x4::from_array([self.len_sq[i], self.len_sq[i+1], self.len_sq[i+2], self.len_sq[i+3]]);
+            let ax =
+                f64x4::from_array([self.ax[i], self.ax[i + 1], self.ax[i + 2], self.ax[i + 3]]);
+            let ay =
+                f64x4::from_array([self.ay[i], self.ay[i + 1], self.ay[i + 2], self.ay[i + 3]]);
+            let dx = f64x4::from_array([
+                self.dir_x[i],
+                self.dir_x[i + 1],
+                self.dir_x[i + 2],
+                self.dir_x[i + 3],
+            ]);
+            let dy = f64x4::from_array([
+                self.dir_y[i],
+                self.dir_y[i + 1],
+                self.dir_y[i + 2],
+                self.dir_y[i + 3],
+            ]);
+            let ls = f64x4::from_array([
+                self.len_sq[i],
+                self.len_sq[i + 1],
+                self.len_sq[i + 2],
+                self.len_sq[i + 3],
+            ]);
 
             let t = ((x - ax) * dx + (y - ay) * dy) / ls;
             let t = t.simd_clamp(f64x4::splat(0.0), f64x4::splat(1.0));
@@ -346,7 +403,13 @@ impl SegmentIndex {
 
     #[cfg(not(feature = "simd"))]
     #[inline]
-    pub fn batch_point_segment_distance_sq_with_index(&self, x: f64, y: f64, start: usize, end: usize) -> (f64, usize) {
+    pub fn batch_point_segment_distance_sq_with_index(
+        &self,
+        x: f64,
+        y: f64,
+        start: usize,
+        end: usize,
+    ) -> (f64, usize) {
         let mut best = f64::INFINITY;
         let mut best_idx = start;
         for i in start..end {
@@ -385,7 +448,10 @@ fn normalize_ring(ring: &LineString<f64>, is_hole: bool) -> Result<Vec<[f64; 2]>
         ));
     }
 
-    if approx_same(*pts.first().expect("ring has first"), *pts.last().expect("ring has last")) {
+    if approx_same(
+        *pts.first().expect("ring has first"),
+        *pts.last().expect("ring has last"),
+    ) {
         pts.pop();
     }
 

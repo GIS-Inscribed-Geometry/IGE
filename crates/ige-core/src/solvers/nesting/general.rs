@@ -3,9 +3,9 @@
 //! Solves the largest polygon (potentially concave) inside a general polygon.
 //! This is the most general case and can handle containers with holes.
 
-use geo_types::Polygon;
-use crate::shared::Result;
 use super::{NestingOptions, NestingResult};
+use crate::shared::Result;
+use geo_types::Polygon;
 
 /// Solve general nesting using morphological approach.
 ///
@@ -14,7 +14,9 @@ pub fn solve_nesting_general_morphological(
     _container: &Polygon<f64>,
     _options: &NestingOptions,
 ) -> Result<NestingResult> {
-    Err(crate::shared::LirError::NotSupported("Nesting general not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "Nesting general not yet implemented".to_string(),
+    ))
 }
 
 /// Solve general nesting using subdivision approach.
@@ -24,7 +26,9 @@ pub fn solve_nesting_general_subdivision(
     _container: &Polygon<f64>,
     _options: &NestingOptions,
 ) -> Result<NestingResult> {
-    Err(crate::shared::LirError::NotSupported("Nesting general subdivision not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "Nesting general subdivision not yet implemented".to_string(),
+    ))
 }
 
 /// Solve general nesting using skeleton approach.
@@ -34,7 +38,9 @@ pub fn solve_nesting_general_skeleton(
     _container: &Polygon<f64>,
     _options: &NestingOptions,
 ) -> Result<NestingResult> {
-    Err(crate::shared::LirError::NotSupported("Nesting general skeleton not yet implemented".to_string()))
+    Err(crate::shared::LirError::NotSupported(
+        "Nesting general skeleton not yet implemented".to_string(),
+    ))
 }
 
 #[cfg(test)]

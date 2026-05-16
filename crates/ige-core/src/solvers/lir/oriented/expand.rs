@@ -161,7 +161,15 @@ impl CoversIndex {
         let mut order: Vec<usize> = (0..n).collect();
         order.sort_unstable_by(|&i, &j| xmin[i].partial_cmp(&xmin[j]).unwrap());
 
-        CoversIndex { edges_a, edges_b, xmin, xmax, ymin, ymax, order }
+        CoversIndex {
+            edges_a,
+            edges_b,
+            xmin,
+            xmax,
+            ymin,
+            ymax,
+            order,
+        }
     }
 
     /// Returns `true` if any polygon edge crosses one of the four rect edges.
@@ -201,7 +209,14 @@ impl CoversIndex {
 ///
 /// Uses a pre-built spatial index for the edge-crossing test to avoid
 /// O(n) ring traversal on every call.
-fn rect_covers(index: &CoversIndex, poly: &Polygon<f64>, x0: f64, y0: f64, x1: f64, y1: f64) -> bool {
+fn rect_covers(
+    index: &CoversIndex,
+    poly: &Polygon<f64>,
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+) -> bool {
     if x1 - x0 < 1e-12 || y1 - y0 < 1e-12 {
         return false;
     }
@@ -221,12 +236,7 @@ fn rect_covers(index: &CoversIndex, poly: &Polygon<f64>, x0: f64, y0: f64, x1: f
     !index.has_crossing(x0, y0, x1, y1)
 }
 
-fn segments_intersect(
-    a: Coord<f64>,
-    b: Coord<f64>,
-    c: Coord<f64>,
-    d: Coord<f64>,
-) -> bool {
+fn segments_intersect(a: Coord<f64>, b: Coord<f64>, c: Coord<f64>, d: Coord<f64>) -> bool {
     fn orientation(p: Coord<f64>, q: Coord<f64>, r: Coord<f64>) -> f64 {
         (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y)
     }
@@ -247,7 +257,14 @@ fn segments_intersect(
     false
 }
 
-fn clamp_aspect_ratio(mut x0: f64, mut y0: f64, mut x1: f64, mut y1: f64, max_ratio: f64, min_ratio: f64) -> (f64, f64, f64, f64) {
+fn clamp_aspect_ratio(
+    mut x0: f64,
+    mut y0: f64,
+    mut x1: f64,
+    mut y1: f64,
+    max_ratio: f64,
+    min_ratio: f64,
+) -> (f64, f64, f64, f64) {
     let rw = x1 - x0;
     let rh = y1 - y0;
     if rw <= 0.0 || rh <= 0.0 {
@@ -318,7 +335,14 @@ pub fn expand_rect_to_boundary(
         let mut hi = 1.0_f64;
         for _ in 0..crate::tuning::EXPAND_MAX_SCALE_ITERS {
             let mid = (lo + hi) * 0.5;
-            if rect_covers(&idx, rot_poly, cx_c - hw * mid, cy_c - hh * mid, cx_c + hw * mid, cy_c + hh * mid) {
+            if rect_covers(
+                &idx,
+                rot_poly,
+                cx_c - hw * mid,
+                cy_c - hh * mid,
+                cx_c + hw * mid,
+                cy_c + hh * mid,
+            ) {
                 lo = mid;
             } else {
                 hi = mid;
@@ -342,16 +366,20 @@ pub fn expand_rect_to_boundary(
         let gap_bottom = if y0 > miny { y0 - miny } else { 0.0 };
         let gap_top = if y1 < maxy { maxy - y1 } else { 0.0 };
 
-        let mut expansions: [(usize, f64); 4] = [
-            (0, gap_left), (1, gap_right), (2, gap_bottom), (3, gap_top),
-        ];
+        let mut expansions: [(usize, f64); 4] =
+            [(0, gap_left), (1, gap_right), (2, gap_bottom), (3, gap_top)];
         expansions.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         for &(side, _) in &expansions {
             match side {
-                0 if x0 > minx => { // Left
+                0 if x0 > minx => {
+                    // Left
                     let min_sdf = multi_probe_sdf_v(rot_poly, x0, y0, y1, SDF_PROBES);
-                    let hi_d = if min_sdf < 0.0 { gap_left.min(min_sdf.abs()) } else { gap_left };
+                    let hi_d = if min_sdf < 0.0 {
+                        gap_left.min(min_sdf.abs())
+                    } else {
+                        gap_left
+                    };
                     if hi_d > 1e-12 {
                         let mut lo_d = 0.0_f64;
                         let mut hi_d = hi_d;
@@ -363,12 +391,20 @@ pub fn expand_rect_to_boundary(
                                 hi_d = mid;
                             }
                         }
-                        if lo_d > 1e-10 { x0 -= lo_d; any_changed = true; }
+                        if lo_d > 1e-10 {
+                            x0 -= lo_d;
+                            any_changed = true;
+                        }
                     }
                 }
-                1 if x1 < maxx => { // Right
+                1 if x1 < maxx => {
+                    // Right
                     let min_sdf = multi_probe_sdf_v(rot_poly, x1, y0, y1, SDF_PROBES);
-                    let hi_d = if min_sdf < 0.0 { gap_right.min(min_sdf.abs()) } else { gap_right };
+                    let hi_d = if min_sdf < 0.0 {
+                        gap_right.min(min_sdf.abs())
+                    } else {
+                        gap_right
+                    };
                     if hi_d > 1e-12 {
                         let mut lo_d = 0.0_f64;
                         let mut hi_d = hi_d;
@@ -380,12 +416,20 @@ pub fn expand_rect_to_boundary(
                                 hi_d = mid;
                             }
                         }
-                        if lo_d > 1e-10 { x1 += lo_d; any_changed = true; }
+                        if lo_d > 1e-10 {
+                            x1 += lo_d;
+                            any_changed = true;
+                        }
                     }
                 }
-                2 if y0 > miny => { // Bottom — fix y, vary x horizontally
+                2 if y0 > miny => {
+                    // Bottom — fix y, vary x horizontally
                     let min_sdf = multi_probe_sdf_h(rot_poly, y0, x0, x1, SDF_PROBES);
-                    let hi_d = if min_sdf < 0.0 { gap_bottom.min(min_sdf.abs()) } else { gap_bottom };
+                    let hi_d = if min_sdf < 0.0 {
+                        gap_bottom.min(min_sdf.abs())
+                    } else {
+                        gap_bottom
+                    };
                     if hi_d > 1e-12 {
                         let mut lo_d = 0.0_f64;
                         let mut hi_d = hi_d;
@@ -397,12 +441,20 @@ pub fn expand_rect_to_boundary(
                                 hi_d = mid;
                             }
                         }
-                        if lo_d > 1e-10 { y0 -= lo_d; any_changed = true; }
+                        if lo_d > 1e-10 {
+                            y0 -= lo_d;
+                            any_changed = true;
+                        }
                     }
                 }
-                3 if y1 < maxy => { // Top
+                3 if y1 < maxy => {
+                    // Top
                     let min_sdf = multi_probe_sdf_h(rot_poly, y1, x0, x1, SDF_PROBES);
-                    let hi_d = if min_sdf < 0.0 { gap_top.min(min_sdf.abs()) } else { gap_top };
+                    let hi_d = if min_sdf < 0.0 {
+                        gap_top.min(min_sdf.abs())
+                    } else {
+                        gap_top
+                    };
                     if hi_d > 1e-12 {
                         let mut lo_d = 0.0_f64;
                         let mut hi_d = hi_d;
@@ -414,14 +466,19 @@ pub fn expand_rect_to_boundary(
                                 hi_d = mid;
                             }
                         }
-                        if lo_d > 1e-10 { y1 += lo_d; any_changed = true; }
+                        if lo_d > 1e-10 {
+                            y1 += lo_d;
+                            any_changed = true;
+                        }
                     }
                 }
                 _ => {}
             }
         }
 
-        if !any_changed { break; }
+        if !any_changed {
+            break;
+        }
     }
 
     (x0, y0, x1, y1) = clamp_aspect_ratio(x0, y0, x1, y1, max_ratio, min_ratio);
@@ -569,7 +626,9 @@ pub fn expand_rect_gradient(
             continue;
         }
 
-        let reexpanded = expand_rect_to_boundary(rot_poly, start_x0, start_y0, start_x1, start_y1, max_ratio, min_ratio);
+        let reexpanded = expand_rect_to_boundary(
+            rot_poly, start_x0, start_y0, start_x1, start_y1, max_ratio, min_ratio,
+        );
 
         let (rx0, ry0, rx1, ry1) = reexpanded;
         let area = (rx1 - rx0) * (ry1 - ry0);
