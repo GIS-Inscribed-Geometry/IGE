@@ -153,6 +153,7 @@ pub struct CliConfig {
     pub use_gradient_expand: bool,
     pub use_ler: bool,
     pub use_ler_oriented: bool,
+    pub use_lir_obstacles: bool,
     pub use_approx_oriented: bool,
     pub use_json: bool,
     pub limit: Option<usize>,
@@ -160,6 +161,9 @@ pub struct CliConfig {
     pub lines_file_path: Option<String>,
     pub polygons_file_path: Option<String>,
     pub line_thickness: f64,
+    pub synth_points: usize,
+    pub synth_lines: usize,
+    pub synth_polygons: usize,
     pub axis_solver: AxisCliSolver,
     pub mask_backend: MaskBackend,
     pub obstacle_flags: ObstacleFlags,
@@ -179,6 +183,7 @@ impl CliConfig {
         let use_gradient_expand = args.contains(&"--gradient-expand".to_string());
         let use_ler = args.contains(&"--ler".to_string());
         let use_ler_oriented = args.contains(&"--ler-oriented".to_string());
+        let use_lir_obstacles = args.contains(&"--lir-obstacles".to_string());
         let use_approx_oriented = !args.contains(&"--baseline".to_string());
         let use_json = args.contains(&"--json".to_string());
         let limit = args
@@ -207,6 +212,9 @@ impl CliConfig {
             .and_then(|i| args.get(i + 1))
             .and_then(|s| s.parse::<f64>().ok())
             .unwrap_or(1.0);
+        let synth_points = parse_synth_count(args, "--synth-points");
+        let synth_lines = parse_synth_count(args, "--synth-lines");
+        let synth_polygons = parse_synth_count(args, "--synth-polygons");
         let axis_solver = parse_axis_solver(args);
         let mask_backend = parse_mask_backend(args);
         let point_solver = parse_point_solver(args);
@@ -226,6 +234,7 @@ impl CliConfig {
             use_gradient_expand,
             use_ler,
             use_ler_oriented,
+            use_lir_obstacles,
             use_approx_oriented,
             use_json,
             limit,
@@ -233,12 +242,24 @@ impl CliConfig {
             lines_file_path,
             polygons_file_path,
             line_thickness,
+            synth_points,
+            synth_lines,
+            synth_polygons,
             axis_solver,
             mask_backend,
             obstacle_flags,
             point_solver,
         }
     }
+}
+
+/// Parse `--synth-points N`, `--synth-lines N`, `--synth-polygons N`.
+fn parse_synth_count(args: &[String], flag: &str) -> usize {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(0)
 }
 
 /// Parse `--obstacles <types>` where types is a comma-separated list.
@@ -310,6 +331,12 @@ pub fn algo_name(config: &CliConfig) -> String {
     let simd = simd_status();
     if config.use_mic_compare {
         format!("MIC exact vs GEOS{}", simd)
+    } else if config.use_lir_obstacles {
+        if config.use_approx_oriented {
+            format!("LIR+Obstacles (Oriented){}", simd)
+        } else {
+            format!("LIR+Obstacles (Axis-Aligned){}", simd)
+        }
     } else if config.use_ler_oriented {
         format!("LER Oriented{}", simd)
     } else if config.use_ler {

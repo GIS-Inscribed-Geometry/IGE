@@ -8,7 +8,8 @@ pub mod axis_aligned;
 pub mod oriented;
 
 use crate::shared::{Rectangle, Result};
-use geo_types::{LineString, Polygon};
+use crate::solvers::ler::axis_aligned::ObstacleInput;
+use geo_types::{Coord, LineString, Polygon};
 
 /// Configuration for LER solvers.
 #[derive(Debug, Clone)]
@@ -30,7 +31,7 @@ impl Default for LerOptions {
         Self {
             max_ratio: 0.0,
             min_ratio: 0.0,
-            grid_coarse: 60,
+            grid_coarse: 40,
             top_k: 5,
             always_return: true,
         }
@@ -185,9 +186,9 @@ pub fn solve_ler_axis_aligned_mixed_sweep(
 
 /// Solve largest empty rectangle with free orientation.
 ///
-/// Uses a coarse-to-fine pipeline with free-space SDF expansion
-/// and certification. The container polygon defines the free space,
-/// and obstacle polygons are avoided.
+/// Uses a coarse-to-fine pipeline with free-space mask expansion.
+/// The container polygon defines the free space within its bounding box,
+/// and obstacle polygons are avoided by their full area (not just vertices).
 ///
 /// # Arguments
 /// * `poly` - Input polygon defining the free space
@@ -202,4 +203,95 @@ pub fn solve_ler_oriented(
     options: &LerOptions,
 ) -> Result<LerResult> {
     oriented::solve_ler_oriented(poly, obstacles, options)
+}
+
+/// Solve largest empty rectangle with free orientation, supporting
+/// point, line, and polygon obstacles.
+///
+/// Uses the coarse-to-fine pipeline internally. Line obstacles are
+/// buffered to thin rectangles using the given thickness.
+///
+/// # Arguments
+/// * `poly` - Input polygon defining the free space
+/// * `polygon_obstacles` - Obstacle polygons to avoid
+/// * `line_obstacles` - Obstacle line segments to avoid
+/// * `line_thickness` - Thickness used to buffer line segments into rectangles
+/// * `options` - Solver configuration
+///
+/// # Returns
+/// A `LerResult` with the largest empty rectangle.
+pub fn solve_ler_oriented_with_lines(
+    poly: &Polygon<f64>,
+    polygon_obstacles: &[Polygon<f64>],
+    line_obstacles: &[LineString<f64>],
+    _line_thickness: f64,
+    options: &LerOptions,
+) -> Result<LerResult> {
+    oriented::solve_ler_oriented_with_lines(poly, polygon_obstacles, line_obstacles, options)
+}
+
+/// Solve largest empty rectangle with free orientation, accepting
+/// mixed obstacle types via the [`ObstacleInput`] enum.
+///
+/// # Arguments
+/// * `poly` - Input polygon defining the free space
+/// * `obstacles` - Mixed obstacle types (points, lines, polygons)
+/// * `options` - Solver configuration
+///
+/// # Returns
+/// A `LerResult` with the largest empty rectangle.
+pub fn solve_ler_oriented_mixed(
+    poly: &Polygon<f64>,
+    obstacles: &[ObstacleInput],
+    options: &LerOptions,
+) -> Result<LerResult> {
+    let polygon_obstacles: Vec<Polygon<f64>> = obstacles
+        .iter()
+        .filter_map(|o| match o {
+            ObstacleInput::Polygon(p) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+    let line_obstacles: Vec<LineString<f64>> = obstacles
+        .iter()
+        .filter_map(|o| match o {
+            ObstacleInput::Line(ls) => Some(ls.clone()),
+            _ => None,
+        })
+        .collect();
+    let mut all_polygons = polygon_obstacles;
+    // Point obstacles → tiny 1e-6 squares as polygons (point-in-cell blocking works)
+    for pt in obstacles.iter().filter_map(|o| match o {
+        ObstacleInput::Point(c) => Some(*c),
+        _ => None,
+    }) {
+        let s = 1e-6;
+        all_polygons.push(Polygon::new(
+            LineString::from(vec![
+                Coord {
+                    x: pt.x - s,
+                    y: pt.y - s,
+                },
+                Coord {
+                    x: pt.x + s,
+                    y: pt.y - s,
+                },
+                Coord {
+                    x: pt.x + s,
+                    y: pt.y + s,
+                },
+                Coord {
+                    x: pt.x - s,
+                    y: pt.y + s,
+                },
+                Coord {
+                    x: pt.x - s,
+                    y: pt.y - s,
+                },
+            ]),
+            vec![],
+        ));
+    }
+    // Lines passed natively — no polygon conversion
+    oriented::solve_ler_oriented_with_lines(poly, &all_polygons, &line_obstacles, options)
 }

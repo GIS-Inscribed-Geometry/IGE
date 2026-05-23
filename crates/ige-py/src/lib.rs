@@ -1,7 +1,9 @@
 use geo::BoundingRect;
 use geo_types::{Coord, LineString, Polygon};
 use ige_core::solvers::lir::oriented::{solve_lir_oriented, LirOrientedOptions};
-use ige_core::solvers::mic::{maximum_inscribed_circle, MicEngine, MicOptions, MicUsedEngine, RobustMode};
+use ige_core::solvers::mic::{
+    maximum_inscribed_circle, MicEngine, MicOptions, MicUsedEngine, RobustMode,
+};
 use ige_core::{rotate_polygon, solve_axis_aligned, AxisAlignedOptions};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -64,23 +66,20 @@ pub fn solve_oriented_lir_py(
     use_edge_anchored: bool,
 ) -> PyResult<PyOrientedLirResult> {
     if exterior.len() < 3 {
-        return Err(PyValueError::new_err("polygon exterior must contain at least 3 points"));
+        return Err(PyValueError::new_err(
+            "polygon exterior must contain at least 3 points",
+        ));
     }
 
-    let coords: Vec<Coord<f64>> = exterior
-        .into_iter()
-        .map(|(x, y)| Coord { x, y })
-        .collect();
+    let coords: Vec<Coord<f64>> = exterior.into_iter().map(|(x, y)| Coord { x, y }).collect();
     let exterior_ls = LineString::from(coords);
 
     let interiors: Vec<LineString<f64>> = holes
         .unwrap_or_default()
         .into_iter()
         .map(|ring| {
-            let ring_coords: Vec<Coord<f64>> = ring
-                .into_iter()
-                .map(|(x, y)| Coord { x, y })
-                .collect();
+            let ring_coords: Vec<Coord<f64>> =
+                ring.into_iter().map(|(x, y)| Coord { x, y }).collect();
             LineString::from(ring_coords)
         })
         .collect();
@@ -145,11 +144,16 @@ pub fn solve_oriented_lir_py(
 
     let polygon_wkt = format!(
         "POLYGON(({:.6} {:.6}, {:.6} {:.6}, {:.6} {:.6}, {:.6} {:.6}, {:.6} {:.6}))",
-        coords[0].0, coords[0].1,
-        coords[1].0, coords[1].1,
-        coords[2].0, coords[2].1,
-        coords[3].0, coords[3].1,
-        coords[0].0, coords[0].1
+        coords[0].0,
+        coords[0].1,
+        coords[1].0,
+        coords[1].1,
+        coords[2].0,
+        coords[2].1,
+        coords[3].0,
+        coords[3].1,
+        coords[0].0,
+        coords[0].1
     );
 
     Ok(PyOrientedLirResult {
@@ -185,7 +189,12 @@ fn oriented_lir_demo() -> PyResult<String> {
     )?;
     Ok(format!(
         "area={:.3}, center=({:.3},{:.3}), size={:.3}x{:.3}, angle={:.1}",
-        result.area, result.center_x, result.center_y, result.width, result.height, result.angle_deg
+        result.area,
+        result.center_x,
+        result.center_y,
+        result.width,
+        result.height,
+        result.angle_deg
     ))
 }
 
@@ -215,23 +224,20 @@ pub fn solve_axis_aligned_py(
     max_grid: Option<usize>,
 ) -> PyResult<PyAxisAlignedResult> {
     if exterior.len() < 3 {
-        return Err(PyValueError::new_err("polygon exterior must contain at least 3 points"));
+        return Err(PyValueError::new_err(
+            "polygon exterior must contain at least 3 points",
+        ));
     }
 
-    let coords: Vec<Coord<f64>> = exterior
-        .into_iter()
-        .map(|(x, y)| Coord { x, y })
-        .collect();
+    let coords: Vec<Coord<f64>> = exterior.into_iter().map(|(x, y)| Coord { x, y }).collect();
     let exterior_ls = LineString::from(coords);
 
     let interiors: Vec<LineString<f64>> = holes
         .unwrap_or_default()
         .into_iter()
         .map(|ring| {
-            let ring_coords: Vec<Coord<f64>> = ring
-                .into_iter()
-                .map(|(x, y)| Coord { x, y })
-                .collect();
+            let ring_coords: Vec<Coord<f64>> =
+                ring.into_iter().map(|(x, y)| Coord { x, y }).collect();
             LineString::from(ring_coords)
         })
         .collect();
@@ -249,8 +255,8 @@ pub fn solve_axis_aligned_py(
         opts.max_grid = grid;
     }
 
-    let result = solve_axis_aligned(&polygon, &opts)
-        .ok_or_else(|| PyValueError::new_err("solve failed"))?;
+    let result =
+        solve_axis_aligned(&polygon, &opts).ok_or_else(|| PyValueError::new_err("solve failed"))?;
 
     Ok(PyAxisAlignedResult {
         x_min: result.x_min,
@@ -264,7 +270,13 @@ pub fn solve_axis_aligned_py(
 #[pyfunction]
 fn axis_aligned_demo() -> PyResult<String> {
     let result = solve_axis_aligned_py(
-        vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)],
+        vec![
+            (0.0, 0.0),
+            (10.0, 0.0),
+            (10.0, 10.0),
+            (0.0, 10.0),
+            (0.0, 0.0),
+        ],
         None,
         None,
         None,
@@ -315,23 +327,20 @@ pub fn solve_lir_oriented_py(
     cert_eps: Option<f64>,
 ) -> PyResult<PyOrientedLirResult> {
     if exterior.len() < 3 {
-        return Err(PyValueError::new_err("polygon exterior must contain at least 3 points"));
+        return Err(PyValueError::new_err(
+            "polygon exterior must contain at least 3 points",
+        ));
     }
 
-    let coords: Vec<Coord<f64>> = exterior
-        .into_iter()
-        .map(|(x, y)| Coord { x, y })
-        .collect();
+    let coords: Vec<Coord<f64>> = exterior.into_iter().map(|(x, y)| Coord { x, y }).collect();
     let exterior_ls = LineString::from(coords);
 
     let interiors: Vec<LineString<f64>> = holes
         .unwrap_or_default()
         .into_iter()
         .map(|ring| {
-            let ring_coords: Vec<Coord<f64>> = ring
-                .into_iter()
-                .map(|(x, y)| Coord { x, y })
-                .collect();
+            let ring_coords: Vec<Coord<f64>> =
+                ring.into_iter().map(|(x, y)| Coord { x, y }).collect();
             LineString::from(ring_coords)
         })
         .collect();
@@ -397,11 +406,16 @@ pub fn solve_lir_oriented_py(
 
     let polygon_wkt = format!(
         "POLYGON(({:.6} {:.6}, {:.6} {:.6}, {:.6} {:.6}, {:.6} {:.6}, {:.6} {:.6}))",
-        coords[0].0, coords[0].1,
-        coords[1].0, coords[1].1,
-        coords[2].0, coords[2].1,
-        coords[3].0, coords[3].1,
-        coords[0].0, coords[0].1
+        coords[0].0,
+        coords[0].1,
+        coords[1].0,
+        coords[1].1,
+        coords[2].0,
+        coords[2].1,
+        coords[3].0,
+        coords[3].1,
+        coords[0].0,
+        coords[0].1
     );
 
     Ok(PyOrientedLirResult {
@@ -528,13 +542,12 @@ pub fn solve_mic_py(
     robust_mode: Option<&str>,
 ) -> PyResult<PyMicResult> {
     if exterior.len() < 3 {
-        return Err(PyValueError::new_err("polygon exterior must contain at least 3 points"));
+        return Err(PyValueError::new_err(
+            "polygon exterior must contain at least 3 points",
+        ));
     }
 
-    let coords: Vec<Coord<f64>> = exterior
-        .into_iter()
-        .map(|(x, y)| Coord { x, y })
-        .collect();
+    let coords: Vec<Coord<f64>> = exterior.into_iter().map(|(x, y)| Coord { x, y }).collect();
     let exterior_ls = LineString::from(coords);
     let polygon = Polygon::new(exterior_ls, vec![]);
 
@@ -571,14 +584,16 @@ pub fn solve_ler_oriented_py(
     _exterior: Vec<(f64, f64)>,
     _obstacles: Option<Vec<Vec<(f64, f64)>>>,
 ) -> PyResult<PyOrientedLirResult> {
-    Err(PyValueError::new_err("LER oriented solver not yet implemented"))
+    Err(PyValueError::new_err(
+        "LER oriented solver not yet implemented",
+    ))
 }
 
-// ─── Nesting solver (placeholder) ─────────────────────────────────────────
+// ─── Nested solver (placeholder) ─────────────────────────────────────────
 
 #[pyclass]
 #[derive(Clone)]
-pub struct PyNestingResult {
+pub struct PyNestedResult {
     #[pyo3(get)]
     pub area: f64,
     #[pyo3(get)]
@@ -586,17 +601,15 @@ pub struct PyNestingResult {
 }
 
 #[pyfunction]
-pub fn solve_nesting_py(
-    _exterior: Vec<(f64, f64)>,
-) -> PyResult<PyNestingResult> {
-    Err(PyValueError::new_err("Nesting solver not yet implemented"))
+pub fn solve_nested_py(_exterior: Vec<(f64, f64)>) -> PyResult<PyNestedResult> {
+    Err(PyValueError::new_err("Nested solver not yet implemented"))
 }
 
-// ─── LER + LIR combined solver (placeholder) ─────────────────────────────
+// ─── LIR + obstacles combined solver (placeholder) ─────────────────────────
 
 #[pyclass]
 #[derive(Clone)]
-pub struct PyLerLirResult {
+pub struct PyLirObstaclesResult {
     #[pyo3(get)]
     pub lir_area: f64,
     #[pyo3(get)]
@@ -604,11 +617,13 @@ pub struct PyLerLirResult {
 }
 
 #[pyfunction]
-pub fn solve_ler_lir_py(
+pub fn solve_lir_obstacles_py(
     _exterior: Vec<(f64, f64)>,
     _obstacles: Option<Vec<Vec<(f64, f64)>>>,
-) -> PyResult<PyLerLirResult> {
-    Err(PyValueError::new_err("LER+LIR solver not yet implemented"))
+) -> PyResult<PyLirObstaclesResult> {
+    Err(PyValueError::new_err(
+        "LIR+obstacles solver not yet implemented",
+    ))
 }
 
 // ─── OBB solver (placeholder) ─────────────────────────────────────────────
@@ -631,9 +646,7 @@ pub struct PyObbResult {
 }
 
 #[pyfunction]
-pub fn solve_obb_py(
-    _exterior: Vec<(f64, f64)>,
-) -> PyResult<PyObbResult> {
+pub fn solve_obb_py(_exterior: Vec<(f64, f64)>) -> PyResult<PyObbResult> {
     Err(PyValueError::new_err("OBB solver not yet implemented"))
 }
 
@@ -660,13 +673,13 @@ fn ige(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(solve_ler_axis_aligned_py, m)?)?;
     m.add_function(wrap_pyfunction!(solve_ler_oriented_py, m)?)?;
 
-    // Nesting solver
-    m.add_class::<PyNestingResult>()?;
-    m.add_function(wrap_pyfunction!(solve_nesting_py, m)?)?;
+    // Nested solver
+    m.add_class::<PyNestedResult>()?;
+    m.add_function(wrap_pyfunction!(solve_nested_py, m)?)?;
 
-    // LER + LIR solver
-    m.add_class::<PyLerLirResult>()?;
-    m.add_function(wrap_pyfunction!(solve_ler_lir_py, m)?)?;
+    // LIR + obstacles solver
+    m.add_class::<PyLirObstaclesResult>()?;
+    m.add_function(wrap_pyfunction!(solve_lir_obstacles_py, m)?)?;
 
     // OBB solver
     m.add_class::<PyObbResult>()?;

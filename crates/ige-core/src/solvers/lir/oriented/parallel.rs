@@ -27,10 +27,10 @@ use rayon::prelude::*;
 // --- Candidate struct -----------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
-struct Candidate {
-    angle: f64,
-    area: f64,
-    rect_rot: (f64, f64, f64, f64),
+pub(crate) struct Candidate {
+    pub(crate) angle: f64,
+    pub(crate) area: f64,
+    pub(crate) rect_rot: (f64, f64, f64, f64),
 }
 
 #[derive(Clone, Copy)]
@@ -65,15 +65,15 @@ impl TinyRng {
 }
 
 /// Rotated-coordinate bundle returned by `rotate_coords_only`.
-struct RotatedCoords {
-    exterior: Vec<Coord<f64>>,
-    holes: Vec<Vec<Coord<f64>>>,
-    bbox: (f64, f64, f64, f64),
+pub(crate) struct RotatedCoords {
+    pub(crate) exterior: Vec<Coord<f64>>,
+    pub(crate) holes: Vec<Vec<Coord<f64>>>,
+    pub(crate) bbox: (f64, f64, f64, f64),
 }
 
 /// Rotate a polygon's coordinates around its centroid without allocating a
 /// `Polygon<f64>`.  The bounding-box falls out of the single coord pass.
-fn rotate_coords_only(poly: &Polygon<f64>, angle_deg: f64) -> RotatedCoords {
+pub(crate) fn rotate_coords_only(poly: &Polygon<f64>, angle_deg: f64) -> RotatedCoords {
     let centroid: Point<f64> = poly
         .centroid()
         .map(|c| c.into())
@@ -153,7 +153,7 @@ fn rotate_coords_only(poly: &Polygon<f64>, angle_deg: f64) -> RotatedCoords {
 
 // --- Parallel mask builder ------------------------------------------------
 
-fn build_mask_parallel(
+pub(crate) fn build_mask_parallel(
     exterior: &[Coord<f64>],
     interiors: &[Vec<Coord<f64>>],
     xs: &[f64],

@@ -25,6 +25,11 @@ use rayon::prelude::*;
 
 use super::{LerOptions, LerResult};
 
+/// A line segment in the rotated grid frame: ((x1,y1),(x2,y2)).
+type LineSegRot = ((f64, f64), (f64, f64));
+/// A world-space line segment: (Coord, Coord).
+type LineSeg = (Coord<f64>, Coord<f64>);
+
 // --- Internal candidate type ---
 
 #[derive(Debug, Clone, Copy)]
@@ -56,17 +61,23 @@ fn generate_angles(container: &Polygon<f64>, min_angles: usize) -> Vec<f64> {
 // --- Coarse sweep ---
 
 fn coarse_evaluate_angle(
-    obs_points: &[Coord<f64>],
+    obs_points_rot: &[Coord<f64>],
+    obs_polygons_world: &[Polygon<f64>],
+    obs_lines_rot: &[LineSegRot],
     bbox: &RotatedBbox,
     angle: f64,
     coarse_steps: usize,
     max_ratio: f64,
     min_ratio: f64,
+    centroid: (f64, f64),
 ) -> Option<LerCandidate> {
     let (minx, miny, maxx, maxy) = bbox.extent;
     if maxx <= minx || maxy <= miny || coarse_steps < 2 {
         return None;
     }
+
+    let rad = -angle.to_radians();
+    let (cos_a, sin_a) = (rad.cos(), rad.sin());
 
     let mut xs = Vec::with_capacity(coarse_steps);
     let mut ys = Vec::with_capacity(coarse_steps);
@@ -76,7 +87,17 @@ fn coarse_evaluate_angle(
         ys.push(miny + (maxy - miny) * t);
     }
 
-    let free_mask = mask::build_free_mask(obs_points, &xs, &ys, Some(&bbox.quad_corners));
+    let free_mask = mask::build_free_mask(
+        obs_points_rot,
+        obs_polygons_world,
+        obs_lines_rot,
+        &xs,
+        &ys,
+        Some(&bbox.quad_corners),
+        centroid,
+        cos_a,
+        sin_a,
+    );
     let n_cols = xs.len().saturating_sub(1);
     let n_rows = ys.len().saturating_sub(1);
     if n_cols == 0 || n_rows == 0 {
@@ -115,11 +136,14 @@ fn coarse_evaluate_angle(
 // --- Fine solve ---
 
 fn fine_solve_angle(
-    obs_points: &[Coord<f64>],
+    obs_points_rot: &[Coord<f64>],
+    obs_polygons_world: &[Polygon<f64>],
+    obs_lines_rot: &[LineSegRot],
     bbox: &RotatedBbox,
     coarse: &LerCandidate,
     max_ratio: f64,
     min_ratio: f64,
+    centroid: (f64, f64),
 ) -> Option<LerCandidate> {
     let (minx, miny, maxx, maxy) = bbox.extent;
     let span_x = maxx - minx;
@@ -128,9 +152,18 @@ fn fine_solve_angle(
         return Some(*coarse);
     }
 
-    // Collect unique x/y from obstacle points + bbox extremes
-    let mut xs_raw: Vec<f64> = obs_points.iter().map(|c| c.x).collect();
-    let mut ys_raw: Vec<f64> = obs_points.iter().map(|c| c.y).collect();
+    let rad = -coarse.angle.to_radians();
+    let (cos_a, sin_a) = (rad.cos(), rad.sin());
+
+    // Collect unique x/y from obstacle points + line endpoints + bbox extremes
+    let mut xs_raw: Vec<f64> = obs_points_rot.iter().map(|c| c.x).collect();
+    let mut ys_raw: Vec<f64> = obs_points_rot.iter().map(|c| c.y).collect();
+    for &((x1, y1), (x2, y2)) in obs_lines_rot {
+        xs_raw.push(x1);
+        xs_raw.push(x2);
+        ys_raw.push(y1);
+        ys_raw.push(y2);
+    }
     xs_raw.push(minx);
     xs_raw.push(maxx);
     ys_raw.push(miny);
@@ -170,7 +203,17 @@ fn fine_solve_angle(
         return None;
     }
 
-    let free_mask = mask::build_free_mask(obs_points, &xs_raw, &ys_raw, Some(&bbox.quad_corners));
+    let free_mask = mask::build_free_mask(
+        obs_points_rot,
+        obs_polygons_world,
+        obs_lines_rot,
+        &xs_raw,
+        &ys_raw,
+        Some(&bbox.quad_corners),
+        centroid,
+        cos_a,
+        sin_a,
+    );
 
     let mut heights = vec![0usize; n_cols];
     let mut best_local: Option<(f64, f64, f64, f64, f64)> = None;
@@ -251,6 +294,39 @@ fn rotate_points(pts: &[Coord<f64>], centroid: Point<f64>, angle_deg: f64) -> Ve
         .collect()
 }
 
+/// Rotate a single point around the container centroid.
+fn rotate_point_coord(c: &Coord<f64>, centroid: Point<f64>, angle_deg: f64) -> (f64, f64) {
+    let (cx, cy) = (centroid.x(), centroid.y());
+    let rad = -angle_deg.to_radians();
+    let (cos_a, sin_a) = (rad.cos(), rad.sin());
+    let dx = c.x - cx;
+    let dy = c.y - cy;
+    (cx + dx * cos_a - dy * sin_a, cy + dx * sin_a + dy * cos_a)
+}
+
+/// Rotate a set of line segments into the grid frame.
+fn rotate_line_segs(segs: &[LineSeg], centroid: Point<f64>, angle_deg: f64) -> Vec<LineSegRot> {
+    segs.iter()
+        .map(|(a, b)| {
+            let ra = rotate_point_coord(a, centroid, angle_deg);
+            let rb = rotate_point_coord(b, centroid, angle_deg);
+            (ra, rb)
+        })
+        .collect()
+}
+
+/// Extract line segments from a slice of LineStrings.
+fn extract_line_segments(lines: &[LineString<f64>]) -> Vec<LineSeg> {
+    let mut segs = Vec::new();
+    for ls in lines {
+        let coords: Vec<Coord<f64>> = ls.coords().copied().collect();
+        for pair in coords.windows(2) {
+            segs.push((pair[0], pair[1]));
+        }
+    }
+    segs
+}
+
 /// Bounding box of the container in the rotated frame, including the
 /// axis-aligned extent and the 4 corners of the rotated quadrilateral.
 struct RotatedBbox {
@@ -261,7 +337,12 @@ struct RotatedBbox {
     quad_corners: [Coord<f64>; 4],
 }
 
-fn rotate_bbox(poly: &Polygon<f64>, centroid: Point<f64>, angle_deg: f64) -> RotatedBbox {
+fn rotate_bbox(
+    poly: &Polygon<f64>,
+    obs_points_rot: &[Coord<f64>],
+    centroid: Point<f64>,
+    angle_deg: f64,
+) -> RotatedBbox {
     let bb = poly.bounding_rect().unwrap();
     let corners = [
         Coord {
@@ -282,11 +363,26 @@ fn rotate_bbox(poly: &Polygon<f64>, centroid: Point<f64>, angle_deg: f64) -> Rot
         },
     ];
     let rotated = rotate_points(&corners, centroid, angle_deg);
+    // Compute combined AABB from container bbox corners AND obstacle points
     let mut minx = f64::MAX;
     let mut miny = f64::MAX;
     let mut maxx = f64::MIN;
     let mut maxy = f64::MIN;
     for c in &rotated {
+        if c.x < minx {
+            minx = c.x
+        }
+        if c.x > maxx {
+            maxx = c.x
+        }
+        if c.y < miny {
+            miny = c.y
+        }
+        if c.y > maxy {
+            maxy = c.y
+        }
+    }
+    for c in obs_points_rot {
         if c.x < minx {
             minx = c.x
         }
@@ -338,6 +434,18 @@ pub fn solve_ler_oriented(
     obstacles: &[Polygon<f64>],
     options: &LerOptions,
 ) -> Result<LerResult> {
+    solve_ler_oriented_with_lines(container, obstacles, &[], options)
+}
+
+/// Like [`solve_ler_oriented`] but also accepts line segments as native obstacles
+/// (not converted to polygons). Each LineString segment is checked for intersection
+/// with grid cells in the rotated frame, so even very long thin lines are detected.
+pub fn solve_ler_oriented_with_lines(
+    container: &Polygon<f64>,
+    obstacles: &[Polygon<f64>],
+    obstacle_lines: &[LineString<f64>],
+    options: &LerOptions,
+) -> Result<LerResult> {
     if container.exterior().0.len() < 3
         || container.bounding_rect().is_none()
         || container.unsigned_area() < 1e-12
@@ -347,32 +455,38 @@ pub fn solve_ler_oriented(
         ));
     }
 
-    let centroid: Point<f64> = container
+    let centroid_pt: Point<f64> = container
         .centroid()
         .map(|c| c.into())
         .unwrap_or(Point::new(0.0, 0.0));
+    let cent = (centroid_pt.x(), centroid_pt.y());
 
-    // Extract obstacle vertex points
+    // Extract obstacle vertex points and line segments (world space)
     let obs_points = extract_obstacle_points(obstacles);
+    let obs_segs = extract_line_segments(obstacle_lines);
 
     let coarse_steps = options.grid_coarse.max(8);
     let top_k = options.top_k.max(1);
 
-    let all_angles = generate_angles(container, 30);
+    let all_angles = generate_angles(container, 24);
 
     // Coarse evaluate all angles in parallel
     let mut candidates: Vec<LerCandidate> = all_angles
         .par_iter()
         .filter_map(|&angle| {
-            let rot_pts = rotate_points(&obs_points, centroid, angle);
-            let bbox = rotate_bbox(container, centroid, angle);
+            let rot_pts = rotate_points(&obs_points, centroid_pt, angle);
+            let rot_lines = rotate_line_segs(&obs_segs, centroid_pt, angle);
+            let bbox = rotate_bbox(container, &rot_pts, centroid_pt, angle);
             coarse_evaluate_angle(
                 &rot_pts,
+                obstacles,
+                &rot_lines,
                 &bbox,
                 angle,
                 coarse_steps,
                 options.max_ratio,
                 options.min_ratio,
+                cent,
             )
         })
         .collect();
@@ -397,15 +511,19 @@ pub fn solve_ler_oriented(
         .collect();
 
     for &angle in &refinement {
-        let rot_pts = rotate_points(&obs_points, centroid, angle);
-        let bbox = rotate_bbox(container, centroid, angle);
+        let rot_pts = rotate_points(&obs_points, centroid_pt, angle);
+        let rot_lines = rotate_line_segs(&obs_segs, centroid_pt, angle);
+        let bbox = rotate_bbox(container, &rot_pts, centroid_pt, angle);
         if let Some(c) = coarse_evaluate_angle(
             &rot_pts,
+            obstacles,
+            &rot_lines,
             &bbox,
             angle,
             coarse_steps,
             options.max_ratio,
             options.min_ratio,
+            cent,
         ) {
             candidates.push(c);
         }
@@ -435,9 +553,19 @@ pub fn solve_ler_oriented(
     let fine_results: Vec<Option<LerCandidate>> = candidates[..top_k]
         .par_iter()
         .map(|cand| {
-            let rot_pts = rotate_points(&obs_points, centroid, cand.angle);
-            let bbox = rotate_bbox(container, centroid, cand.angle);
-            fine_solve_angle(&rot_pts, &bbox, cand, options.max_ratio, options.min_ratio)
+            let rot_pts = rotate_points(&obs_points, centroid_pt, cand.angle);
+            let rot_lines = rotate_line_segs(&obs_segs, centroid_pt, cand.angle);
+            let bbox = rotate_bbox(container, &rot_pts, centroid_pt, cand.angle);
+            fine_solve_angle(
+                &rot_pts,
+                obstacles,
+                &rot_lines,
+                &bbox,
+                cand,
+                options.max_ratio,
+                options.min_ratio,
+                cent,
+            )
         })
         .collect();
 
@@ -454,11 +582,11 @@ pub fn solve_ler_oriented(
     // Build result
     let raw_poly = Polygon::new(
         LineString::from(vec![
-            rotate_point(best.rect_rot.0, best.rect_rot.1, best.angle, &centroid),
-            rotate_point(best.rect_rot.2, best.rect_rot.1, best.angle, &centroid),
-            rotate_point(best.rect_rot.2, best.rect_rot.3, best.angle, &centroid),
-            rotate_point(best.rect_rot.0, best.rect_rot.3, best.angle, &centroid),
-            rotate_point(best.rect_rot.0, best.rect_rot.1, best.angle, &centroid),
+            rotate_point(best.rect_rot.0, best.rect_rot.1, best.angle, &centroid_pt),
+            rotate_point(best.rect_rot.2, best.rect_rot.1, best.angle, &centroid_pt),
+            rotate_point(best.rect_rot.2, best.rect_rot.3, best.angle, &centroid_pt),
+            rotate_point(best.rect_rot.0, best.rect_rot.3, best.angle, &centroid_pt),
+            rotate_point(best.rect_rot.0, best.rect_rot.1, best.angle, &centroid_pt),
         ]),
         vec![],
     );
@@ -481,7 +609,8 @@ pub fn solve_ler_oriented(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use geo_types::{coord, LineString};
+    use geo::Contains;
+    use geo_types::{coord, LineString, Point};
 
     fn square_container() -> Polygon<f64> {
         Polygon::new(
@@ -701,5 +830,93 @@ mod tests {
             "area={} should fill bounding box",
             result.area
         );
+    }
+
+    #[test]
+    fn polygon_obstacle_blocks_interior() {
+        // Large 8x8 obstacle in center: the empty rect should NOT be inside it.
+        // With the old point-only approach, the rectangle could pass through
+        // the obstacle interior since only 4 corner vertices blocked cells.
+        let poly = square_container();
+        let obs = vec![Polygon::new(
+            LineString::from(vec![
+                coord! {x:1.0, y:1.0},
+                coord! {x:9.0, y:1.0},
+                coord! {x:9.0, y:9.0},
+                coord! {x:1.0, y:9.0},
+                coord! {x:1.0, y:1.0},
+            ]),
+            vec![],
+        )];
+        let result = solve_ler_oriented(&poly, &obs, &LerOptions::default()).unwrap();
+        // Free strips: top/bottom = 10x1 = 10, left/right = 1x8 = 8
+        // So max should be no more than ~10
+        assert!(
+            result.area < 15.0,
+            "area={} should be blocked by large obstacle",
+            result.area
+        );
+        // No empty rect can cross into the obstacle interior
+        if let Some(rp) = &result.rect_polygon {
+            let centroid = rp.centroid().unwrap();
+            let c: Coord = centroid.into();
+            // Centroid should NOT be inside the obstacle
+            let inside_obs = obs[0].contains(&Point::new(c.x, c.y));
+            assert!(!inside_obs, "rect centroid should not be inside obstacle");
+        }
+    }
+
+    #[test]
+    fn line_obstacle_blocks_strip() {
+        let poly = square_container();
+        // Native 0-width line at x=5 — blocks grid cells the line passes through
+        let line = LineString::from(vec![coord! {x:5.0, y:0.0}, coord! {x:5.0, y:10.0}]);
+        let result =
+            crate::solve_ler_oriented_with_lines(&poly, &[], &[line], 0.0, &LerOptions::default())
+                .unwrap();
+        assert!(result.area > 0.0, "area should be positive");
+        // Line at x=5 blocks the column → max side area < 55
+        assert!(
+            result.area < 55.0,
+            "area={} too large, might cross line",
+            result.area
+        );
+        // Rectangle should be entirely on one side of x=5
+        if let Some(rect) = &result.rect {
+            let x_min = rect.x_min;
+            let x_max = rect.x_max;
+            assert!(
+                x_max <= 5.0 || x_min >= 5.0,
+                "rect [{}, {}] crosses line obstacle",
+                x_min,
+                x_max
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_obstacles_oriented() {
+        let poly = square_container();
+        use crate::solvers::ler::axis_aligned::ObstacleInput;
+        let obstacles = vec![
+            ObstacleInput::Point(coord! {x: 2.0, y: 2.0}),
+            ObstacleInput::Line(LineString::from(vec![
+                coord! {x: 7.0, y: 0.0},
+                coord! {x: 7.0, y: 10.0},
+            ])),
+            ObstacleInput::Polygon(Polygon::new(
+                LineString::from(vec![
+                    coord! {x:4.0, y:4.0},
+                    coord! {x:6.0, y:4.0},
+                    coord! {x:6.0, y:6.0},
+                    coord! {x:4.0, y:6.0},
+                    coord! {x:4.0, y:4.0},
+                ]),
+                vec![],
+            )),
+        ];
+        let result =
+            crate::solve_ler_oriented_mixed(&poly, &obstacles, &LerOptions::default()).unwrap();
+        assert!(result.area > 0.0, "area should be positive");
     }
 }

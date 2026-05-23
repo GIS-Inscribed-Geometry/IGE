@@ -65,7 +65,7 @@ fn largest_rect_in_histogram(
     )
 }
 
-fn subdivide_coords(coords: &[f64], levels: u32) -> Vec<f64> {
+pub(crate) fn subdivide_coords(coords: &[f64], levels: u32) -> Vec<f64> {
     if coords.len() < 2 || levels == 0 {
         return coords.to_vec();
     }
@@ -86,7 +86,11 @@ fn subdivide_coords(coords: &[f64], levels: u32) -> Vec<f64> {
     result
 }
 
-fn compute_row_intervals(poly: &Polygon<f64>, xs: &[f64], ys: &[f64]) -> Vec<Vec<(usize, usize)>> {
+pub(crate) fn compute_row_intervals(
+    poly: &Polygon<f64>,
+    xs: &[f64],
+    ys: &[f64],
+) -> Vec<Vec<(usize, usize)>> {
     let n_cols = xs.len().saturating_sub(1);
     let n_rows = ys.len().saturating_sub(1);
     if n_cols == 0 || n_rows == 0 {

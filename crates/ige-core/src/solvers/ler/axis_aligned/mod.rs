@@ -25,13 +25,7 @@ use rayon::prelude::*;
 const EPS: f64 = 1e-9;
 const MAX_CANDIDATES: usize = 500;
 
-/// Public obstacle input — the solver auto-detects the variant.
-#[derive(Clone, Debug)]
-pub enum ObstacleInput {
-    Point(Coord<f64>),
-    Line(LineString<f64>),
-    Polygon(Polygon<f64>),
-}
+pub use crate::shared::ObstacleInput;
 
 // ── helpers ──────────────────────────────────────────────────────────
 

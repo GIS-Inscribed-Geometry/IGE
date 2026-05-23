@@ -6,6 +6,13 @@ use geo::Centroid;
 use geo_types::{Coord, LineString, Point, Polygon};
 use thiserror::Error;
 
+#[derive(Clone, Debug)]
+pub enum ObstacleInput {
+    Point(Coord<f64>),
+    Line(LineString<f64>),
+    Polygon(Polygon<f64>),
+}
+
 #[derive(Debug, Clone)]
 pub struct Rectangle {
     pub x_min: f64,

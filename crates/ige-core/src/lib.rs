@@ -34,19 +34,22 @@ pub use solvers::ler::{
     solve_ler_axis_aligned, solve_ler_axis_aligned_mixed, solve_ler_axis_aligned_mixed_sweep,
     solve_ler_axis_aligned_points_dc, solve_ler_axis_aligned_points_sweep,
     solve_ler_axis_aligned_with_lines, solve_ler_axis_aligned_with_lines_exact, solve_ler_oriented,
-    LerOptions, LerResult,
+    solve_ler_oriented_mixed, solve_ler_oriented_with_lines, LerOptions, LerResult,
 };
 
-// Nesting solvers
-pub use solvers::nesting::{solve_nesting, solve_nesting_convex, NestingOptions, NestingResult};
+// Nested solvers
+pub use solvers::nested::{solve_nested, solve_nested_convex, NestedOptions, NestedResult};
 
-// LER + LIR combined solvers
-pub use solvers::ler_lir::{
-    solve_ler_lir, solve_ler_lir_axis_aligned, LerLirOptions, LerLirResult,
+// LIR + obstacles combined solvers
+pub use solvers::lir_obstacles::{
+    solve_lir_obstacles, solve_lir_obstacles_axis_aligned, solve_lir_obstacles_oriented,
+    LirObstaclesOptions, LirObstaclesResult,
 };
 
 // OBB solvers
-pub use solvers::obb::{solve_obb, solve_obb_constrained, ObbOptions, ObbResult};
+pub use solvers::obb::{
+    build_obb_frame, solve_obb, solve_obb_aspect_fit, solve_obb_constrained, ObbOptions, ObbResult,
+};
 
 pub use shared::{
     rotate_polygon, AlgorithmCategory, AlgorithmPrecision, AlgorithmSpeed, LirError, PolygonType,

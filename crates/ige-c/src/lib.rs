@@ -3,12 +3,14 @@
 //! Provides a C-compatible API for calling IGE from C, C++, or any language
 //! with C FFI support.
 
-use libc::{c_double, c_int, size_t};
-use ige_core::{solve_axis_aligned, AxisAlignedOptions, rotate_polygon};
-use ige_core::solvers::lir::oriented::{solve_lir_oriented, LirOrientedOptions};
-use ige_core::solvers::mic::{maximum_inscribed_circle, MicEngine, MicOptions, MicUsedEngine, RobustMode};
 use geo::BoundingRect;
 use geo_types::{Coord, LineString, Polygon};
+use ige_core::solvers::lir::oriented::{solve_lir_oriented, LirOrientedOptions};
+use ige_core::solvers::mic::{
+    maximum_inscribed_circle, MicEngine, MicOptions, MicUsedEngine, RobustMode,
+};
+use ige_core::{rotate_polygon, solve_axis_aligned, AxisAlignedOptions};
+use libc::{c_double, c_int, size_t};
 use std::slice;
 
 /// C-compatible rectangle result
@@ -92,13 +94,20 @@ pub struct IgeAxisAlignedOptions {
 
 impl Default for IgeAxisAlignedOptions {
     fn default() -> Self {
-        Self { max_aspect_ratio: 0.0, min_aspect_ratio: 0.0 }
+        Self {
+            max_aspect_ratio: 0.0,
+            min_aspect_ratio: 0.0,
+        }
     }
 }
 
 impl From<IgeAxisAlignedOptions> for AxisAlignedOptions {
     fn from(opts: IgeAxisAlignedOptions) -> Self {
-        AxisAlignedOptions { max_ratio: opts.max_aspect_ratio, min_ratio: opts.min_aspect_ratio, max_grid: 51 }
+        AxisAlignedOptions {
+            max_ratio: opts.max_aspect_ratio,
+            min_ratio: opts.min_aspect_ratio,
+            max_grid: 51,
+        }
     }
 }
 
@@ -131,11 +140,11 @@ pub unsafe extern "C" fn ige_ler_options_default() -> IgeLerOptions {
     IgeLerOptions::default()
 }
 
-// ─── Nesting solver (placeholder) ─────────────────────────────────────────
+// ─── Nested solver (placeholder) ─────────────────────────────────────────
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct IgeNestingOptions {
+pub struct IgeNestedOptions {
     pub max_aspect_ratio: c_double,
     pub min_aspect_ratio: c_double,
     pub max_vertices: usize,
@@ -143,7 +152,7 @@ pub struct IgeNestingOptions {
     pub prefer_convex: c_int,
 }
 
-impl Default for IgeNestingOptions {
+impl Default for IgeNestedOptions {
     fn default() -> Self {
         Self {
             max_aspect_ratio: 0.0,
@@ -156,21 +165,21 @@ impl Default for IgeNestingOptions {
 }
 
 #[repr(C)]
-pub struct IgeNestingResult {
+pub struct IgeNestedResult {
     pub area: c_double,
     pub fill_ratio: c_double,
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ige_nesting_options_default() -> IgeNestingOptions {
-    IgeNestingOptions::default()
+pub unsafe extern "C" fn ige_nested_options_default() -> IgeNestedOptions {
+    IgeNestedOptions::default()
 }
 
-// ─── LER + LIR solver (placeholder) ───────────────────────────────────────
+// ─── LIR + obstacles solver (placeholder) ─────────────────────────────────
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct IgeLerLirOptions {
+pub struct IgeLirObstaclesOptions {
     pub max_aspect_ratio: c_double,
     pub min_aspect_ratio: c_double,
     pub grid_coarse: usize,
@@ -179,7 +188,7 @@ pub struct IgeLerLirOptions {
     pub axis_aligned_only: c_int,
 }
 
-impl Default for IgeLerLirOptions {
+impl Default for IgeLirObstaclesOptions {
     fn default() -> Self {
         Self {
             max_aspect_ratio: 0.0,
@@ -193,14 +202,14 @@ impl Default for IgeLerLirOptions {
 }
 
 #[repr(C)]
-pub struct IgeLerLirResult {
+pub struct IgeLirObstaclesResult {
     pub lir_area: c_double,
     pub ler_area: c_double,
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ige_ler_lir_options_default() -> IgeLerLirOptions {
-    IgeLerLirOptions::default()
+pub unsafe extern "C" fn ige_lir_obstacles_options_default() -> IgeLirObstaclesOptions {
+    IgeLirObstaclesOptions::default()
 }
 
 // ─── OBB solver (placeholder) ─────────────────────────────────────────────
@@ -306,7 +315,8 @@ pub unsafe extern "C" fn ige_solve_axis_aligned(
         IgeAxisAlignedOptions::default()
     } else {
         unsafe { *options }
-    }.into();
+    }
+    .into();
 
     match solve_axis_aligned(&polygon, &opts) {
         Some(rect) => {

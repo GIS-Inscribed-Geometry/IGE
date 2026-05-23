@@ -1,33 +1,22 @@
-//! Convex polygon nesting solver.
-//!
-//! Solves the largest convex polygon inside a convex container.
-//! This is simpler than the general case.
-
-use super::{NestingOptions, NestingResult};
+use super::{NestedOptions, NestedResult};
 use crate::shared::Result;
 use geo_types::Polygon;
 
-/// Solve convex nesting using polygon offset approach.
-///
-/// This is a placeholder implementation.
-pub fn solve_nesting_convex_offset(
+pub fn solve_nested_oriented_offset(
     _container: &Polygon<f64>,
-    _options: &NestingOptions,
-) -> Result<NestingResult> {
+    _options: &NestedOptions,
+) -> Result<NestedResult> {
     Err(crate::shared::LirError::NotSupported(
-        "Nesting convex not yet implemented".to_string(),
+        "nested oriented offset not yet implemented".to_string(),
     ))
 }
 
-/// Solve convex nesting using vertex insertion approach.
-///
-/// This is a placeholder implementation.
-pub fn solve_nesting_convex_vertex(
+pub fn solve_nested_oriented_vertex(
     _container: &Polygon<f64>,
-    _options: &NestingOptions,
-) -> Result<NestingResult> {
+    _options: &NestedOptions,
+) -> Result<NestedResult> {
     Err(crate::shared::LirError::NotSupported(
-        "Nesting convex vertex not yet implemented".to_string(),
+        "nested oriented vertex not yet implemented".to_string(),
     ))
 }
 
@@ -52,7 +41,7 @@ mod tests {
     #[test]
     fn placeholder_not_implemented() {
         let poly = sample_convex_polygon();
-        let result = solve_nesting_convex_offset(&poly, &NestingOptions::default());
+        let result = solve_nested_oriented_offset(&poly, &NestedOptions::default());
         assert!(result.is_err());
     }
 }

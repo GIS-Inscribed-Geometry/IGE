@@ -33,7 +33,7 @@ use crate::visualize_modules::shapes::{make_l_shape, make_u_shape, make_zigzag};
 use ige_core::solvers::ler::{solve_ler_oriented, LerOptions};
 use ige_core::{
     solve_ler_axis_aligned_mixed_sweep, solve_ler_axis_aligned_points_dc,
-    solve_ler_axis_aligned_points_sweep,
+    solve_ler_axis_aligned_points_sweep, solve_lir_obstacles, LirObstaclesOptions,
 };
 fn bbox_polygon(x0: f64, y0: f64, x1: f64, y1: f64) -> geo_types::Polygon<f64> {
     geo_types::Polygon::new(
@@ -122,9 +122,16 @@ fn solve_polygon(
     mask_backend: MaskBackend,
     obstacles: &[ige_core::ObstacleInput],
 ) -> (Option<geo_types::Polygon<f64>>, f64, f64, bool) {
-    if config.use_ler_oriented {
-        // Convert all obstacle types (points, lines, polygons) to polygons
-        // so the oriented LER can handle them uniformly.
+    if config.use_lir_obstacles {
+        let mut opts = LirObstaclesOptions::default();
+        opts.axis_aligned_only = !config.use_approx_oriented;
+        opts.line_thickness = config.line_thickness;
+        match solve_lir_obstacles(poly, obstacles, &opts) {
+            Ok(r) => (r.rect_polygon, r.area, r.angle_deg, r.best_effort),
+            Err(_) => (None, 0.0, 0.0, false),
+        }
+    } else if config.use_ler_oriented {
+        // Separate obstacles by type — pass lines natively to the solver
         let obs_polys: Vec<geo_types::Polygon<f64>> = obstacles
             .iter()
             .filter_map(|o| match o {
@@ -157,33 +164,23 @@ fn solve_polygon(
                         vec![],
                     ))
                 }
-                ige_core::ObstacleInput::Line(ls) => {
-                    let half = 0.01;
-                    let pts: Vec<_> = ls.coords().collect();
-                    if pts.len() >= 2 {
-                        let (ax, ay) = (pts[0].x, pts[0].y);
-                        let (bx, by) = (pts[1].x, pts[1].y);
-                        let x0 = ax.min(bx) - half;
-                        let x1 = ax.max(bx) + half;
-                        let y0 = ay.min(by) - half;
-                        let y1 = ay.max(by) + half;
-                        Some(geo_types::Polygon::new(
-                            geo_types::LineString::from(vec![
-                                geo_types::Coord { x: x0, y: y0 },
-                                geo_types::Coord { x: x1, y: y0 },
-                                geo_types::Coord { x: x1, y: y1 },
-                                geo_types::Coord { x: x0, y: y1 },
-                                geo_types::Coord { x: x0, y: y0 },
-                            ]),
-                            vec![],
-                        ))
-                    } else {
-                        None
-                    }
-                }
+                _ => None,
             })
             .collect();
-        match solve_ler_oriented(poly, &obs_polys, &LerOptions::default()) {
+        let obs_lines: Vec<geo_types::LineString<f64>> = obstacles
+            .iter()
+            .filter_map(|o| match o {
+                ige_core::ObstacleInput::Line(ls) => Some(ls.clone()),
+                _ => None,
+            })
+            .collect();
+        match ige_core::solve_ler_oriented_with_lines(
+            poly,
+            &obs_polys,
+            &obs_lines,
+            0.0,
+            &LerOptions::default(),
+        ) {
             Ok(r) => (r.rect_polygon, r.area, r.angle_deg, r.best_effort),
             Err(_) => (None, 0.0, 0.0, false),
         }
@@ -354,7 +351,9 @@ fn build_html_lir(
         .map(|(_, card, _, _, _, _, _)| card.as_str())
         .collect();
 
-    let title = if config.use_ler || config.use_ler_oriented {
+    let title = if config.use_lir_obstacles {
+        "Largest Inscribed Rectangle + Obstacles"
+    } else if config.use_ler || config.use_ler_oriented {
         "Largest Empty Rectangle"
     } else {
         "Largest Inscribed Rectangle"
@@ -504,10 +503,12 @@ fn main() {
                 // Solver obstacles: vertex points
                 for c in poly.exterior().coords() {
                     cluster_obstacle_map[idx].push(ige_core::ObstacleInput::Point(*c));
+                    render_map[idx].push(ige_core::ObstacleInput::Point(*c));
                 }
                 for hole in poly.interiors() {
                     for c in hole.coords() {
                         cluster_obstacle_map[idx].push(ige_core::ObstacleInput::Point(*c));
+                        render_map[idx].push(ige_core::ObstacleInput::Point(*c));
                     }
                 }
 
@@ -563,7 +564,94 @@ fn main() {
                         }
                     }
                 }
+
+                // For lir_obstacles: load line/polygon obstacles from files into cluster_obstacle_map
+                if config.use_lir_obstacles && has_any_synth {
+                    use geo::BoundingRect;
+                    let poly_bboxes: Vec<Option<geo_types::Rect<f64>>> = all_polygons
+                        .iter()
+                        .map(|(_, p)| p.bounding_rect())
+                        .collect();
+
+                    for (idx, _) in all_polygons.iter().enumerate() {
+                        let pbox = &poly_bboxes[idx];
+
+                        if flags.lines {
+                            for (_, lines) in &clustered_lines {
+                                for ls in lines {
+                                    if let Some(ref pb) = pbox {
+                                        let mut lx0 = f64::MAX;
+                                        let mut lx1 = f64::MIN;
+                                        let mut ly0 = f64::MAX;
+                                        let mut ly1 = f64::MIN;
+                                        for c in ls.coords() {
+                                            lx0 = lx0.min(c.x);
+                                            lx1 = lx1.max(c.x);
+                                            ly0 = ly0.min(c.y);
+                                            ly1 = ly1.max(c.y);
+                                        }
+                                        if lx1 > pb.min().x
+                                            && lx0 < pb.max().x
+                                            && ly1 > pb.min().y
+                                            && ly0 < pb.max().y
+                                        {
+                                            let pts: Vec<geo_types::Coord<f64>> =
+                                                ls.coords().copied().collect();
+                                            for pair in pts.windows(2) {
+                                                cluster_obstacle_map[idx].push(
+                                                    ige_core::ObstacleInput::Line(
+                                                        geo_types::LineString::from(vec![
+                                                            pair[0], pair[1],
+                                                        ]),
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if flags.polygons {
+                            for (_, polys) in &clustered_polys {
+                                for p in polys {
+                                    if let Some(ref pb) = pbox {
+                                        if let Some(bb) = p.bounding_rect() {
+                                            if bb.max().x > pb.min().x
+                                                && bb.min().x < pb.max().x
+                                                && bb.max().y > pb.min().y
+                                                && bb.min().y < pb.max().y
+                                            {
+                                                cluster_obstacle_map[idx].push(
+                                                    ige_core::ObstacleInput::Polygon(p.clone()),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
+        }
+    }
+
+    // For lir_obstacles: generate synthetic obstacles unless external
+    // obstacle files are loaded.
+    if config.use_lir_obstacles
+        && !has_any_synth
+        && (config.synth_points > 0 || config.synth_lines > 0 || config.synth_polygons > 0)
+    {
+        use crate::visualize_modules::generators::generate_synth_obs;
+        for (idx, (_, poly)) in all_polygons.iter().enumerate() {
+            let (solver_obs, render_obs) = generate_synth_obs(
+                poly,
+                config.synth_points,
+                config.synth_lines,
+                config.synth_polygons,
+            );
+            cluster_obstacle_map[idx].extend(solver_obs);
+            render_map[idx].extend(render_obs);
         }
     }
 
@@ -597,11 +685,16 @@ fn main() {
             let start = std::time::Instant::now();
             let obs_solver = &cluster_obstacle_map[idx]; // solver-only (points)
             let obs_render = &render_map[idx]; // visual-only (lines/polygons)
-                                               // Combined for SVG
-            let mut all_obs: Vec<ige_core::ObstacleInput> =
-                Vec::with_capacity(obs_solver.len() + obs_render.len());
-            all_obs.extend(obs_solver.iter().cloned());
-            all_obs.extend(obs_render.iter().cloned());
+                                               // Combined for SVG — lir_obstacles only uses render_map so solver
+                                               // artefacts (e.g. point → polygon buffers) don't show as yellow squares.
+            let all_obs = if config.use_lir_obstacles {
+                obs_render.to_vec()
+            } else {
+                let mut v = Vec::with_capacity(obs_solver.len() + obs_render.len());
+                v.extend(obs_solver.iter().cloned());
+                v.extend(obs_render.iter().cloned());
+                v
+            };
             let (rp, ra, ang, be) = solve_polygon(poly, &config, config.mask_backend, obs_solver);
             let ms = start.elapsed().as_secs_f64() * 1000.0;
             let poly_area = poly.unsigned_area();
@@ -618,7 +711,7 @@ fn main() {
                 ang,
                 be,
                 ms,
-                config.use_ler || config.use_ler_oriented,
+                config.use_ler || config.use_ler_oriented || config.use_lir_obstacles,
                 &all_obs,
                 is_bbox_map[idx],
             );

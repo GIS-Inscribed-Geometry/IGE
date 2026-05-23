@@ -1,15 +1,18 @@
 //! Oriented Bounding Box (OBB) solver.
 //!
-//! Finds the minimal area oriented bounding box that encloses a polygon.
-//! Unlike LIR which finds the largest rectangle INSIDE a polygon,
-//! OBB finds the smallest bounding box that CONTAINS the polygon.
+//! Finds the minimal area oriented bounding box that encloses a polygon,
+//! or the optimal rotation for a fixed-aspect-ratio frame.
 //!
-//! This is useful for collision detection, packing, and shape analysis.
+//! ## Sub-modules
+//! - `axis_aligned` — axis-aligned bounding box
+//! - `oriented` — oriented solvers (min-area calipers, aspect-ratio fit)
 
-pub mod solver;
+pub mod axis_aligned;
+pub mod oriented;
 
 use crate::shared::Result;
-use geo_types::{Point, Polygon};
+use geo::Area;
+use geo_types::{Coord, LineString, Point, Polygon};
 
 /// Configuration for OBB solvers.
 #[derive(Debug, Clone)]
@@ -58,10 +61,16 @@ pub struct ObbResult {
     pub height: f64,
     /// Centroid of the bounding box.
     pub centroid: Option<Point<f64>>,
-    /// Aspect ratio (width/height or height/width, whichever is larger).
+    /// Aspect ratio (longer/shorter, always ≥ 1).
     pub aspect_ratio: f64,
     /// Fill ratio (polygon area / OBB area).
     pub fill_ratio: f64,
+    /// Fill ratio at 0° (aspect-fit only).
+    pub north_fill: f64,
+    /// Improvement % over north-up (aspect-fit only).
+    pub improve_pct: f64,
+    /// Number of caliper intervals (aspect-fit only).
+    pub n_intervals: usize,
 }
 
 impl ObbResult {
@@ -76,6 +85,9 @@ impl ObbResult {
             centroid: None,
             aspect_ratio: 1.0,
             fill_ratio: 0.0,
+            north_fill: 0.0,
+            improve_pct: 0.0,
+            n_intervals: 0,
         }
     }
 }
@@ -86,30 +98,105 @@ impl Default for ObbResult {
     }
 }
 
-/// Solve for the minimal oriented bounding box.
-///
-/// # Arguments
-/// * `poly` - Input polygon
-/// * `options` - Solver configuration
-///
-/// # Returns
-/// An `ObbResult` with the minimal bounding box.
-pub fn solve_obb(_poly: &Polygon<f64>, _options: &ObbOptions) -> Result<ObbResult> {
-    Err(crate::shared::LirError::NotSupported(
-        "OBB not yet implemented".to_string(),
-    ))
+/// Minimal-area oriented bounding box via rotating calipers.
+pub fn solve_obb(poly: &Polygon<f64>, options: &ObbOptions) -> Result<ObbResult> {
+    oriented::calipers::solve_obb_rotating_calipers(poly, options)
 }
 
-/// Solve for minimal OBB with aspect ratio constraints.
+/// Minimal OBB with aspect-ratio constraints.
 ///
-/// # Arguments
-/// * `poly` - Input polygon
-/// * `options` - Solver configuration (max_ratio and min_ratio will be applied)
+/// Applies max_ratio / min_ratio from `ObbOptions` by expanding the
+/// shorter side after the min-area solve.
+pub fn solve_obb_constrained(poly: &Polygon<f64>, options: &ObbOptions) -> Result<ObbResult> {
+    let mut result = oriented::calipers::solve_obb_rotating_calipers(poly, options)?;
+    if options.max_ratio > 0.0 || options.min_ratio > 0.0 {
+        let w = result.width;
+        let h = result.height;
+        let current_ar = (w / h).max(h / w);
+        let needs_clamp = (options.max_ratio > 0.0 && current_ar > options.max_ratio)
+            || (options.min_ratio > 0.0 && current_ar < options.min_ratio);
+        if needs_clamp {
+            let target_ar = if options.max_ratio > 0.0 && current_ar > options.max_ratio {
+                options.max_ratio
+            } else {
+                options.min_ratio
+            };
+            let (new_w, new_h) = if w >= h {
+                (w, w / target_ar)
+            } else {
+                (h * target_ar, h)
+            };
+            result.width = new_w;
+            result.height = new_h;
+            result.area = new_w * new_h;
+            result.aspect_ratio = if new_h > 0.0 {
+                (new_w / new_h).max(new_h / new_w)
+            } else {
+                1.0
+            };
+            result.fill_ratio = poly.unsigned_area() / result.area.max(1e-12);
+            // Rebuild polygon to match the new dimensions
+            if let Some(ref centroid) = result.centroid {
+                let bb_poly = Polygon::new(
+                    LineString::from(vec![
+                        Coord {
+                            x: -new_w / 2.0,
+                            y: -new_h / 2.0,
+                        },
+                        Coord {
+                            x: new_w / 2.0,
+                            y: -new_h / 2.0,
+                        },
+                        Coord {
+                            x: new_w / 2.0,
+                            y: new_h / 2.0,
+                        },
+                        Coord {
+                            x: -new_w / 2.0,
+                            y: new_h / 2.0,
+                        },
+                        Coord {
+                            x: -new_w / 2.0,
+                            y: -new_h / 2.0,
+                        },
+                    ]),
+                    vec![],
+                );
+                let rotated = crate::shared::rotate_polygon_around(
+                    &bb_poly,
+                    result.angle_deg,
+                    &Point::new(0.0, 0.0),
+                );
+                let ext: Vec<Coord<f64>> = rotated
+                    .exterior()
+                    .0
+                    .iter()
+                    .map(|c| Coord {
+                        x: c.x + centroid.x(),
+                        y: c.y + centroid.y(),
+                    })
+                    .collect();
+                result.polygon = Some(Polygon::new(LineString::from(ext), vec![]));
+            }
+        }
+    }
+    Ok(result)
+}
+
+/// Optimal rotation for a fixed-aspect-ratio frame.
 ///
-/// # Returns
-/// An `ObbResult` with the constrained bounding box.
-pub fn solve_obb_constrained(_poly: &Polygon<f64>, _options: &ObbOptions) -> Result<ObbResult> {
-    Err(crate::shared::LirError::NotSupported(
-        "OBB constrained not yet implemented".to_string(),
-    ))
+/// Uses the exact AFR algorithm: O(n log n) rotating-calipers support
+/// function with closed-form crossing roots per caliper interval.
+pub fn solve_obb_aspect_fit(poly: &Polygon<f64>, ratio_w: f64, ratio_h: f64) -> Option<ObbResult> {
+    oriented::aspect_fit::solve_obb_aspect_fit(poly, ratio_w, ratio_h)
+}
+
+/// Build the COVER frame polygon for a given optimal angle.
+pub fn build_obb_frame(
+    poly: &Polygon<f64>,
+    theta_rad: f64,
+    ratio_w: f64,
+    ratio_h: f64,
+) -> Option<(Polygon<f64>, f64, f64, f64, f64, f64, f64)> {
+    oriented::aspect_fit::build_obb_frame(poly, theta_rad, ratio_w, ratio_h)
 }
