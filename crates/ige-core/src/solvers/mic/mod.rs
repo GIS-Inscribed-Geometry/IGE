@@ -38,6 +38,7 @@ pub enum RobustMode {
 pub struct MicOptions {
     pub engine: MicEngine,
     pub robust_mode: RobustMode,
+    pub use_bvh: bool,
 }
 
 impl Default for MicOptions {
@@ -45,6 +46,7 @@ impl Default for MicOptions {
         Self {
             engine: MicEngine::ExactThenGeos,
             robust_mode: RobustMode::Filtered,
+            use_bvh: false,
         }
     }
 }
@@ -186,7 +188,7 @@ fn solve_on_host_polygon(host: &HostPolygon, opts: &MicOptions) -> Result<MicRes
 
     if use_grid {
         // Use grid solver - now uses original polygon (no normalization)
-        let workspace = MicWorkspace::new(host.clone())?;
+        let workspace = MicWorkspace::new(host.clone(), opts.use_bvh)?;
         let bounds = host.bounds().unwrap_or((0.0, 0.0, 1.0, 1.0));
         let diag = (bounds.2 - bounds.0).hypot(bounds.3 - bounds.1).max(1.0);
         let tolerance = (diag * 1e-7).max(1e-12);
@@ -202,7 +204,7 @@ fn solve_on_host_polygon(host: &HostPolygon, opts: &MicOptions) -> Result<MicRes
         MicEngine::ExactOnly => run_exact(host, opts),
         MicEngine::FallbackOnly => run_geos(host, None, opts),
         MicEngine::ExactThenGeos => {
-            let mut workspace = match MicWorkspace::new(host.clone()) {
+            let mut workspace = match MicWorkspace::new(host.clone(), opts.use_bvh) {
                 Ok(w) => w,
                 Err(e) => {
                     #[cfg(feature = "geos")]
@@ -242,7 +244,7 @@ fn solve_on_host_polygon(host: &HostPolygon, opts: &MicOptions) -> Result<MicRes
 }
 
 fn run_exact(host: &HostPolygon, opts: &MicOptions) -> Result<MicResult, MicError> {
-    let mut workspace = MicWorkspace::new(host.clone())?;
+    let mut workspace = MicWorkspace::new(host.clone(), opts.use_bvh)?;
     solve_exact(&mut workspace, opts).map_err(|err| MicError::ExactFailed(err.to_string()))
 }
 

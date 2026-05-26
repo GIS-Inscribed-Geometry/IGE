@@ -2,6 +2,8 @@
 //!
 //! Port of `_polygon_sdf`, `_rect_sdf_max`, and `_certify_and_adjust`.
 
+#[cfg(feature = "shewchuk")]
+use crate::solvers::common::shewchuk::orient2d;
 use geo_types::{Coord, Polygon};
 
 #[cfg(target_arch = "x86")]
@@ -11,6 +13,12 @@ use std::arch::x86_64 as arch;
 
 const CERT_EPS: f64 = 1e-7;
 const CERT_MAX_SHRINK: f64 = 0.20;
+
+#[inline]
+#[cfg(not(feature = "shewchuk"))]
+fn cross2d(ux: f64, uy: f64, vx: f64, vy: f64) -> f64 {
+    ux * vy - uy * vx
+}
 
 // --- Core SDF -------------------------------------------------------------
 
@@ -40,18 +48,44 @@ pub fn polygon_sdf(poly: &Polygon<f64>, x: f64, y: f64) -> f64 {
                 }
             }
         }
-        for w in coords.windows(2) {
-            let (ax, ay) = (w[0].x, w[0].y);
-            let (bx, by) = (w[1].x, w[1].y);
+        // ── Winding number ─────────────────────────────────────────────
+        #[cfg(feature = "shewchuk")]
+        {
+            for w in coords.windows(2) {
+                let (ax, ay) = (w[0].x, w[0].y);
+                let (bx, by) = (w[1].x, w[1].y);
 
-            // Winding number increment (robust crossing test)
-            if ay <= y {
-                if by > y && cross2d(ax - x, ay - y, bx - x, by - y) > 0.0 {
-                    winding += 1;
+                let y_lo = if ay < by { ay } else { by };
+                let y_hi = if ay > by { ay } else { by };
+                if y < y_lo || y >= y_hi {
+                    continue;
                 }
-            } else {
-                if by <= y && cross2d(ax - x, ay - y, bx - x, by - y) < 0.0 {
-                    winding -= 1;
+
+                if ay <= y {
+                    if by > y && orient2d(ax, ay, bx, by, x, y) > 0.0 {
+                        winding += 1;
+                    }
+                } else {
+                    if by <= y && orient2d(ax, ay, bx, by, x, y) < 0.0 {
+                        winding -= 1;
+                    }
+                }
+            }
+        }
+        #[cfg(not(feature = "shewchuk"))]
+        {
+            for w in coords.windows(2) {
+                let (ax, ay) = (w[0].x, w[0].y);
+                let (bx, by) = (w[1].x, w[1].y);
+
+                if ay <= y {
+                    if by > y && cross2d(ax - x, ay - y, bx - x, by - y) > 0.0 {
+                        winding += 1;
+                    }
+                } else {
+                    if by <= y && cross2d(ax - x, ay - y, bx - x, by - y) < 0.0 {
+                        winding -= 1;
+                    }
                 }
             }
         }
@@ -75,11 +109,6 @@ pub fn sdf_gradient(poly: &Polygon<f64>, x: f64, y: f64) -> (f64, f64) {
     let dy = (sdf(x, y + H) - sdf(x, y - H)) / (2.0 * H);
 
     (dx, dy)
-}
-
-#[inline(always)]
-fn cross2d(ux: f64, uy: f64, vx: f64, vy: f64) -> f64 {
-    ux * vy - uy * vx
 }
 
 #[inline(always)]

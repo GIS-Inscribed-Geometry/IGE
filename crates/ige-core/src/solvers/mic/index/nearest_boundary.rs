@@ -1,4 +1,5 @@
 use super::super::input::SegmentIndex;
+use super::bvh::FlatBvh;
 
 const GRID_MIN_CELLS: usize = 4;
 const GRID_MAX_CELLS: usize = 128;
@@ -416,13 +417,27 @@ fn linear_supporting_segments(
 #[derive(Debug, Clone)]
 pub struct NearestBoundaryIndex {
     segments: SegmentIndex,
-    grid: GridIndex,
+    grid: Option<GridIndex>,
+    bvh: Option<FlatBvh>,
 }
 
 impl NearestBoundaryIndex {
-    pub fn new(segments: SegmentIndex) -> Self {
-        let grid = GridIndex::from_segments(&segments);
-        Self { segments, grid }
+    pub fn new(segments: SegmentIndex, use_bvh: bool) -> Self {
+        if use_bvh {
+            let bvh = FlatBvh::new(&segments);
+            Self {
+                segments,
+                grid: None,
+                bvh: Some(bvh),
+            }
+        } else {
+            let grid = GridIndex::from_segments(&segments);
+            Self {
+                segments,
+                grid: Some(grid),
+                bvh: None,
+            }
+        }
     }
 
     #[inline]
@@ -432,6 +447,10 @@ impl NearestBoundaryIndex {
 
     #[inline]
     pub fn nearest_distance_sq(&self, x: f64, y: f64) -> Option<(f64, usize)> {
+        if let Some(bvh) = &self.bvh {
+            return bvh.nearest_distance_sq(&self.segments, x, y);
+        }
+        let grid = self.grid.as_ref().unwrap();
         if self.segments.is_empty() {
             return None;
         }
@@ -448,19 +467,22 @@ impl NearestBoundaryIndex {
         if n <= 32 {
             return linear_scan_nearest(&self.segments, x, y, 0);
         }
-        if self.grid.nx == 0 {
+        if grid.nx == 0 {
             return linear_scan_nearest(&self.segments, x, y, 0);
         }
-        self.grid.nearest_via_grid(&self.segments, x, y)
+        grid.nearest_via_grid(&self.segments, x, y)
     }
 
     pub fn supporting_segments(&self, x: f64, y: f64, min_dist_sq: f64, eps: f64) -> Vec<usize> {
         let max_dist_sq = min_dist_sq + eps.abs().max(1e-14);
-        if self.grid.nx == 0 {
+        if let Some(bvh) = &self.bvh {
+            return bvh.supporting_segments(&self.segments, x, y, max_dist_sq);
+        }
+        let grid = self.grid.as_ref().unwrap();
+        if grid.nx == 0 {
             return linear_supporting_segments(&self.segments, x, y, max_dist_sq);
         }
-        self.grid
-            .supporting_via_grid(&self.segments, x, y, max_dist_sq)
+        grid.supporting_via_grid(&self.segments, x, y, max_dist_sq)
     }
 }
 

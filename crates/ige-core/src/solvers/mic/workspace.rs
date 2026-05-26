@@ -19,7 +19,7 @@ pub struct MicWorkspace {
 }
 
 impl MicWorkspace {
-    pub fn new(host: HostPolygon) -> Result<Self, MicError> {
+    pub fn new(host: HostPolygon, use_bvh: bool) -> Result<Self, MicError> {
         let seg_index = SegmentIndex::from_host(&host);
         if seg_index.is_empty() {
             return Err(MicError::InvalidInput(
@@ -27,7 +27,7 @@ impl MicWorkspace {
             ));
         }
         let pip_index = PipIndex::new(&host);
-        let nb_index = NearestBoundaryIndex::new(seg_index);
+        let nb_index = NearestBoundaryIndex::new(seg_index, use_bvh);
         Ok(Self {
             host,
             pip_index,

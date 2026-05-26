@@ -14,6 +14,7 @@
 //!   cargo run --package ige-core --example visualize -- --limit 50
 //!   cargo run --package ige-core --example visualize --features geos -- --mic-compare --real-only --file crates/ige-core/tests/real_world_data/realworld.geojson
 //!   cargo run --package ige-core --example visualize --features simd   # compile with SIMD (shows "+ SIMD" in title)
+//!   cargo run --package ige-core --example visualize --features shewchuk   # compile with Shewchuk orient2d (shows "+ Shewchuk" in title)
 
 mod visualize_modules;
 
@@ -21,7 +22,7 @@ use rayon::prelude::*;
 use std::fs;
 
 use crate::visualize_modules::cli::{
-    algo_name, simd_status, AxisCliSolver, CliConfig, PointCliSolver,
+    algo_name, shewchuk_status, simd_status, AxisCliSolver, CliConfig, PointCliSolver,
 };
 use crate::visualize_modules::io::{
     line_cluster_bbox, load_linestrings_clustered, load_polygons_clustered, load_polygons_from,
@@ -767,10 +768,12 @@ fn run_mic_mode(
     let exact_opts = MicOptions {
         engine: MicEngine::ExactOnly,
         robust_mode: RobustMode::Filtered,
+        use_bvh: config.use_bvh,
     };
     let geos_opts = MicOptions {
         engine: MicEngine::FallbackOnly,
         robust_mode: RobustMode::Filtered,
+        use_bvh: false,
     };
 
     let wall_start = std::time::Instant::now();
@@ -957,13 +960,13 @@ fn run_mic_mode(
         sit = speed_label,
         wall_total_ms = wall_total_ms,
         cards = cards,
-        simd = simd_status(),
+        simd = format!("{}{}", simd_status(), shewchuk_status()),
     );
     fs::write(&path, &html).unwrap();
     println!(
         "Generated: {}  (MIC exact vs GEOS{})",
         path.display(),
-        simd_status()
+        format!("{}{}", simd_status(), shewchuk_status())
     );
     println!(
         "Wall time: {:.2}ms  (avg {:.2}ms/shape)",

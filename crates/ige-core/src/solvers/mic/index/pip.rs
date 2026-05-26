@@ -1,109 +1,149 @@
-use super::super::input::{HostPolygon, RingMeta};
+#[cfg(feature = "shewchuk")]
+use crate::solvers::common::winding_index::WindingIndex;
+#[cfg(feature = "shewchuk")]
+use geo_types::{Coord, LineString, Polygon};
 
-/// Bounding box for a single ring.
-#[derive(Debug, Clone, Copy)]
-struct RingBbox {
-    min_x: f64,
-    min_y: f64,
-    max_x: f64,
-    max_y: f64,
-}
-
-/// Point-in-polygon check using winding number over ring data.
-/// Optimized with per-ring bounding box prefilter to skip ray-casting when point is outside ring AABB.
+/// Point-in-polygon test.
+///
+/// Without the `shewchuk` feature: classic even-odd ray casting (fast, but may
+/// have edge cases near vertices).
+///
+/// With the `shewchuk` feature: exact winding number using Shewchuk adaptive
+/// arithmetic + x-interval spatial acceleration.
 #[derive(Debug, Clone)]
 pub struct PipIndex {
+    #[cfg(feature = "shewchuk")]
+    winding: WindingIndex,
+    /// Flat vertex data for ray-casting fallback.
+    #[cfg(not(feature = "shewchuk"))]
     coords: Vec<[f64; 2]>,
+    #[cfg(not(feature = "shewchuk"))]
     rings: Vec<RingMeta>,
+    #[cfg(not(feature = "shewchuk"))]
     ring_bboxes: Vec<RingBbox>,
 }
 
+#[cfg(not(feature = "shewchuk"))]
+#[derive(Debug, Clone)]
+struct RingMeta {
+    start: usize,
+    end: usize,
+    is_hole: bool,
+}
+
+#[cfg(not(feature = "shewchuk"))]
+#[derive(Debug, Clone)]
+struct RingBbox {
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+}
+
 impl PipIndex {
-    pub fn new(host: &HostPolygon) -> Self {
-        let coords = host.coords.clone();
-        let rings = host.rings.clone();
+    pub fn new(host: &super::super::input::HostPolygon) -> Self {
+        #[cfg(feature = "shewchuk")]
+        {
+            let exterior = LineString::from(
+                host.coords
+                    .iter()
+                    .take(host.rings[0].end)
+                    .map(|c| Coord { x: c[0], y: c[1] })
+                    .collect::<Vec<_>>(),
+            );
 
-        // Precompute per-ring bounding boxes
-        let ring_bboxes = rings
-            .iter()
-            .map(|meta| {
-                let ring = &coords[meta.start..meta.end];
-                let mut min_x = f64::INFINITY;
-                let mut min_y = f64::INFINITY;
-                let mut max_x = f64::NEG_INFINITY;
-                let mut max_y = f64::NEG_INFINITY;
-                for pt in ring {
-                    min_x = min_x.min(pt[0]);
-                    min_y = min_y.min(pt[1]);
-                    max_x = max_x.max(pt[0]);
-                    max_y = max_y.max(pt[1]);
-                }
-                RingBbox {
-                    min_x,
-                    min_y,
-                    max_x,
-                    max_y,
-                }
-            })
-            .collect();
+            let mut interiors = Vec::new();
+            for ring_meta in host.rings.iter().skip(1) {
+                let ring_coords: Vec<Coord<f64>> = host.coords[ring_meta.start..ring_meta.end]
+                    .iter()
+                    .map(|c| Coord { x: c[0], y: c[1] })
+                    .collect();
+                interiors.push(LineString::from(ring_coords));
+            }
 
-        Self {
-            coords,
-            rings,
-            ring_bboxes,
+            let poly = Polygon::new(exterior, interiors);
+            return Self {
+                winding: WindingIndex::from_polygon(&poly),
+            };
+        }
+        #[cfg(not(feature = "shewchuk"))]
+        {
+            let mut rings = Vec::new();
+            let mut ring_bboxes = Vec::new();
+
+            for ring_meta in &host.rings {
+                let coords = &host.coords[ring_meta.start..ring_meta.end];
+                let mut x_min = f64::INFINITY;
+                let mut x_max = f64::NEG_INFINITY;
+                let mut y_min = f64::INFINITY;
+                let mut y_max = f64::NEG_INFINITY;
+                for c in coords {
+                    x_min = x_min.min(c[0]);
+                    x_max = x_max.max(c[0]);
+                    y_min = y_min.min(c[1]);
+                    y_max = y_max.max(c[1]);
+                }
+                ring_bboxes.push(RingBbox {
+                    x_min,
+                    x_max,
+                    y_min,
+                    y_max,
+                });
+                rings.push(RingMeta {
+                    start: ring_meta.start,
+                    end: ring_meta.end,
+                    is_hole: ring_meta.is_hole,
+                });
+            }
+
+            Self {
+                coords: host.coords.clone(),
+                rings,
+                ring_bboxes,
+            }
         }
     }
 
+    #[inline]
     pub fn contains_strict_xy(&self, x: f64, y: f64) -> bool {
-        for (ring_idx, meta) in self.rings.iter().enumerate() {
-            let bbox = self.ring_bboxes[ring_idx];
-            // Quick bbox reject: if point outside ring's AABB, it cannot be inside the ring
-            if x < bbox.min_x || x > bbox.max_x || y < bbox.min_y || y > bbox.max_y {
-                if meta.is_hole {
-                    // Outside hole bbox → inside hole → outside polygon (for exterior)
-                    // But if point is outside hole bbox, it's outside the hole → OK so far, continue to next ring
-                    // Actually: for a hole, we need point NOT inside hole.
-                    // If point is outside hole's bbox, it's definitely not inside hole → passes this ring
-                } else {
-                    // Outside exterior bbox → definitely not inside polygon
-                    return false;
+        #[cfg(feature = "shewchuk")]
+        {
+            return self.winding.contains(x, y);
+        }
+        #[cfg(not(feature = "shewchuk"))]
+        {
+            // Even-odd ray casting with ring-bbox pre-filter
+            let mut inside = false;
+            for (ring_meta, bbox) in self.rings.iter().zip(self.ring_bboxes.iter()) {
+                if x < bbox.x_min || x > bbox.x_max || y < bbox.y_min || y > bbox.y_max {
+                    continue;
                 }
-            } else {
-                // Point inside ring bbox, need full ray-casting
-                let ring = &self.coords[meta.start..meta.end];
-                let inside = point_in_ring(x, y, ring);
-                if meta.is_hole {
-                    if inside {
-                        return false;
+                let ring_in = point_in_ring(x, y, &self.coords[ring_meta.start..ring_meta.end]);
+                if ring_meta.is_hole {
+                    if ring_in {
+                        inside = false;
                     }
                 } else {
-                    if !inside {
-                        return false;
-                    }
+                    inside ^= ring_in;
                 }
             }
+            inside
         }
-        true
     }
 }
 
+#[cfg(not(feature = "shewchuk"))]
 fn point_in_ring(x: f64, y: f64, ring: &[[f64; 2]]) -> bool {
     let mut inside = false;
-    let mut j = ring.len() - 1;
-    for i in 0..ring.len() {
-        let ai = ring[i];
-        let aj = ring[j];
-        let (ax, ay) = (ai[0], ai[1]);
-        let (bx, by) = (aj[0], aj[1]);
-
-        let crosses = (ay > y) != (by > y);
-        if crosses {
-            let x_intersect = (bx - ax) * (y - ay) / (by - ay) + ax;
-            if x < x_intersect {
+    for w in ring.windows(2) {
+        let (ax, ay) = (w[0][0], w[0][1]);
+        let (bx, by) = (w[1][0], w[1][1]);
+        if (ay > y) != (by > y) {
+            let intersect_x = ax + (y - ay) * (bx - ax) / (by - ay);
+            if x < intersect_x {
                 inside = !inside;
             }
         }
-        j = i;
     }
     inside
 }

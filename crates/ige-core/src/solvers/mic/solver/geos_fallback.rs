@@ -55,7 +55,7 @@ pub fn solve_with_geos(
         Some(idx) => idx.clone(),
         None => SegmentIndex::from_host(host),
     };
-    let nb_index = NearestBoundaryIndex::new(seg_index);
+    let nb_index = NearestBoundaryIndex::new(seg_index, false);
     let Some((nearest_sq, _)) = nb_index.nearest_distance_sq(center.0, center.1) else {
         return Err(MicError::NoCircleFound);
     };

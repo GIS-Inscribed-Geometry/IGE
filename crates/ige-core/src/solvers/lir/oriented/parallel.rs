@@ -20,6 +20,8 @@ use super::certify::{best_effort_shrink_to_cover, certify_and_adjust};
 use super::expand::{expand_rect_gradient, expand_rect_to_boundary};
 use super::{LirOrientedOptions, LirOrientedResult};
 use crate::shared::{LirError, Rectangle, Result};
+#[cfg(feature = "shewchuk")]
+use crate::solvers::common::shewchuk::orient2d;
 use geo::{BoundingRect, Centroid, ConvexHull};
 use geo_types::{Coord, LineString, Point, Polygon};
 use rayon::prelude::*;
@@ -295,24 +297,58 @@ fn take_rotated(rotations: &mut Vec<(f64, RotatedCoords)>, angle: f64) -> Option
 }
 
 fn point_in_rotated_polygon(rc: &RotatedCoords, px: f64, py: f64) -> bool {
-    let mut inside = false;
-    for ring in std::iter::once(rc.exterior.as_slice()).chain(rc.holes.iter().map(|h| h.as_slice()))
+    #[cfg(feature = "shewchuk")]
     {
-        if ring.len() < 2 {
-            continue;
-        }
-        let mut j = ring.len() - 1usize;
-        for i in 0..ring.len() {
-            let a = ring[i];
-            let b = ring[j];
-            let dy = b.y - a.y;
-            if ((a.y > py) != (b.y > py)) && (px < (b.x - a.x) * (py - a.y) / (dy + 1e-18) + a.x) {
-                inside = !inside;
+        let mut winding = 0i32;
+        for ring in
+            std::iter::once(rc.exterior.as_slice()).chain(rc.holes.iter().map(|h| h.as_slice()))
+        {
+            if ring.len() < 2 {
+                continue;
             }
-            j = i;
+            for w in ring.windows(2) {
+                let a = w[0];
+                let b = w[1];
+                let y_lo = if a.y < b.y { a.y } else { b.y };
+                let y_hi = if a.y > b.y { a.y } else { b.y };
+                if py < y_lo || py >= y_hi {
+                    continue;
+                }
+                if a.y <= py {
+                    if b.y > py && orient2d(a.x, a.y, b.x, b.y, px, py) > 0.0 {
+                        winding += 1;
+                    }
+                } else {
+                    if b.y <= py && orient2d(a.x, a.y, b.x, b.y, px, py) < 0.0 {
+                        winding -= 1;
+                    }
+                }
+            }
         }
+        return winding != 0;
     }
-    inside
+    #[cfg(not(feature = "shewchuk"))]
+    {
+        let mut inside = false;
+        for ring in
+            std::iter::once(rc.exterior.as_slice()).chain(rc.holes.iter().map(|h| h.as_slice()))
+        {
+            if ring.len() < 2 {
+                continue;
+            }
+            for w in ring.windows(2) {
+                let a = w[0];
+                let b = w[1];
+                if (a.y > py) != (b.y > py) {
+                    let intersect_x = a.x + (py - a.y) * (b.x - a.x) / (b.y - a.y);
+                    if px < intersect_x {
+                        inside = !inside;
+                    }
+                }
+            }
+        }
+        return inside;
+    }
 }
 
 fn ray_distance_to_boundary(rc: &RotatedCoords, px: f64, py: f64, dx: f64, dy: f64) -> Option<f64> {

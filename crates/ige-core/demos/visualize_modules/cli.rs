@@ -168,6 +168,7 @@ pub struct CliConfig {
     pub mask_backend: MaskBackend,
     pub obstacle_flags: ObstacleFlags,
     pub point_solver: PointCliSolver,
+    pub use_bvh: bool,
 }
 
 impl CliConfig {
@@ -218,6 +219,7 @@ impl CliConfig {
         let axis_solver = parse_axis_solver(args);
         let mask_backend = parse_mask_backend(args);
         let point_solver = parse_point_solver(args);
+        let use_bvh = args.contains(&"--bvh".to_string());
 
         // Parse --obstacles flag
         let obstacle_flags = parse_obstacles_flag(args, lines_file_path.is_some());
@@ -249,6 +251,7 @@ impl CliConfig {
             mask_backend,
             obstacle_flags,
             point_solver,
+            use_bvh,
         }
     }
 }
@@ -326,11 +329,32 @@ pub fn simd_status() -> &'static str {
     }
 }
 
+/// Returns shewchuk status string for display.
+pub fn shewchuk_status() -> &'static str {
+    #[cfg(feature = "shewchuk")]
+    {
+        " + Shewchuk"
+    }
+    #[cfg(not(feature = "shewchuk"))]
+    {
+        ""
+    }
+}
+
+/// Returns BVH status string for display.
+pub fn bvh_status(config: &CliConfig) -> &'static str {
+    if config.use_bvh {
+        " + BVH"
+    } else {
+        ""
+    }
+}
+
 /// Generate a human-readable algorithm name for the current configuration.
 pub fn algo_name(config: &CliConfig) -> String {
-    let simd = simd_status();
+    let simd = format!("{}{}", simd_status(), shewchuk_status());
     if config.use_mic_compare {
-        format!("MIC exact vs GEOS{}", simd)
+        format!("MIC exact vs GEOS{}{}", simd, bvh_status(config))
     } else if config.use_lir_obstacles {
         if config.use_approx_oriented {
             format!("LIR+Obstacles (Oriented){}", simd)
