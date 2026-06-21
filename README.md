@@ -26,7 +26,7 @@ flowchart LR
     G --> M[Convex / General]
 
     H & I --> N[CPU parallel]
-    I --> O[GPU compute(WebGPU / WGSL)]
+    I --> O["GPU compute (WebGPU / WGSL)"]
 ```
 
 ## Solvers
