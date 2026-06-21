@@ -12,11 +12,11 @@ A Rust library for computing inscribed geometry problems relevant to GIS and spa
 ```mermaid
 flowchart LR
     A[Input polygon] --> B{Inscribed problem}
-    B --> C[LIR: Largest<br>Inscribed Rectangle]
-    B --> D[MIC: Maximum<br>Inscribed Circle]
-    B --> E[LER: Largest<br>Empty Rectangle]
-    B --> F[OBB: Oriented<br>Bounding Box]
-    B --> G[Nested: Inside<br>container polygon]
+    B --> C[LIR: LargestInscribed Rectangle]
+    B --> D[MIC: MaximumInscribed Circle]
+    B --> E[LER: LargestEmpty Rectangle]
+    B --> F[OBB: OrientedBounding Box]
+    B --> G[Nested: Insidecontainer polygon]
     
     C --> H[Axis-aligned]
     C --> I[Oriented]
@@ -26,7 +26,7 @@ flowchart LR
     G --> M[Convex / General]
 
     H & I --> N[CPU parallel]
-    I --> O[GPU compute<br>(WebGPU / WGSL)]
+    I --> O[GPU compute(WebGPU / WGSL)]
 ```
 
 ## Solvers
