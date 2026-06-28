@@ -143,6 +143,7 @@ fn try_rect(
     }
 }
 
+#[allow(non_snake_case)]
 fn dc(
     pts: &[(f64, f64)],
     bx0: f64,

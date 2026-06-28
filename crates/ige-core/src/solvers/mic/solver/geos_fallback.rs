@@ -92,6 +92,7 @@ fn geos_tolerance(host: &HostPolygon, opts: &MicOptions) -> f64 {
     (diag * factor).max(1e-12)
 }
 
+#[allow(dead_code)]
 fn host_polygon_to_wkt(host: &HostPolygon) -> String {
     let mut out = String::from("POLYGON (");
     for ring_id in 0..host.ring_count() {
