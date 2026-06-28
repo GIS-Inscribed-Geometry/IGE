@@ -115,6 +115,7 @@ fn exact_opts() -> MicOptions {
     MicOptions {
         engine: MicEngine::ExactOnly,
         robust_mode: RobustMode::Filtered,
+        use_bvh: false,
     }
 }
 
@@ -123,6 +124,7 @@ fn geos_opts() -> MicOptions {
     MicOptions {
         engine: MicEngine::FallbackOnly,
         robust_mode: RobustMode::Filtered,
+        use_bvh: false,
     }
 }
 
