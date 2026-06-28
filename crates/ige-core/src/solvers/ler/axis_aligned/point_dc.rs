@@ -242,8 +242,8 @@ fn dc(
         if full_w * (by1 - y_b) <= *best_area + EPS {
             continue;
         }
-        let mut l = bx0;
-        let mut r = bx1;
+        let mut L = bx0;
+        let mut R = bx1;
         for j in (i + 1)..n {
             let y_t = by_y[j].1;
             if y_t > y_b + EPS && L < R {

@@ -1,3 +1,6 @@
+#[cfg(feature = "shewchuk")]
+#[allow(dead_code)]
+pub mod common;
 pub mod ler;
 pub mod lir;
 pub mod lir_obstacles;

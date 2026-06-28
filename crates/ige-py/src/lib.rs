@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 use geo::BoundingRect;
 use geo_types::{Coord, LineString, Polygon};
 use ige_core::solvers::lir::oriented::{solve_lir_oriented, LirOrientedOptions};
@@ -7,10 +8,6 @@ use ige_core::solvers::mic::{
 use ige_core::{rotate_polygon, solve_axis_aligned, AxisAlignedOptions};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-
-#![allow(deprecated)]
-
-// ─── Oriented solver ──────────────────────────────────────────────────────
 
 #[pyclass]
 #[derive(Clone)]

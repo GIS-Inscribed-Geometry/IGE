@@ -253,7 +253,7 @@ fn any_rot_obstacle_in_x(
     x0: f64,
     x1: f64,
     pts: &[Coord<f64>],
-    _lines: &[LineSegRot],
+    lines: &[LineSegRot],
     poly_bboxes: &[(f64, f64, f64, f64)],
 ) -> bool {
     for c in pts {
@@ -280,7 +280,7 @@ fn any_rot_obstacle_in_y(
     y0: f64,
     y1: f64,
     pts: &[Coord<f64>],
-    _lines: &[LineSegRot],
+    lines: &[LineSegRot],
     poly_bboxes: &[(f64, f64, f64, f64)],
 ) -> bool {
     for c in pts {
@@ -309,7 +309,7 @@ fn rot_shrink_rect(
     mut r: f64,
     mut t: f64,
     pts: &[Coord<f64>],
-    _lines: &[LineSegRot],
+    lines: &[LineSegRot],
     poly_bboxes: &[(f64, f64, f64, f64)],
 ) -> (f64, f64, f64, f64) {
     let eps = EPS;
