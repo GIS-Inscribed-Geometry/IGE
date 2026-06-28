@@ -7,8 +7,8 @@
 //!   cargo run --package ige-core --example generate_polygon_features
 //!   cargo run --package ige-core --example generate_polygon_features -- --count 300 --clusters 10 --output target/ige_output/random_polygons.geojson
 
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use serde_json::{json, Value};
 
 fn random_polygon_coords(rng: &mut StdRng, cx: f64, cy: f64, spread: f64) -> Vec<Vec<Vec<f64>>> {
@@ -82,18 +82,29 @@ fn main() {
 
         let polys = generate_cluster(&mut rng, cx, cy, cluster_spread, poly_spread, actual_count);
 
-        let mut min_x = f64::MAX; let mut min_y = f64::MAX;
-        let mut max_x = f64::MIN; let mut max_y = f64::MIN;
+        let mut min_x = f64::MAX;
+        let mut min_y = f64::MAX;
+        let mut max_x = f64::MIN;
+        let mut max_y = f64::MIN;
         for poly in &polys {
             for ring in poly {
                 for pt in ring {
-                    min_x = min_x.min(pt[0]); min_y = min_y.min(pt[1]);
-                    max_x = max_x.max(pt[0]); max_y = max_y.max(pt[1]);
+                    min_x = min_x.min(pt[0]);
+                    min_y = min_y.min(pt[1]);
+                    max_x = max_x.max(pt[0]);
+                    max_y = max_y.max(pt[1]);
                 }
             }
         }
-        eprintln!("  Cluster {}: {} polys, bbox=({:.1},{:.1})-({:.1},{:.1})",
-            cluster_idx + 1, actual_count, min_x, min_y, max_x, max_y);
+        eprintln!(
+            "  Cluster {}: {} polys, bbox=({:.1},{:.1})-({:.1},{:.1})",
+            cluster_idx + 1,
+            actual_count,
+            min_x,
+            min_y,
+            max_x,
+            max_y
+        );
 
         for poly_coords in &polys {
             global_id += 1;
@@ -120,6 +131,13 @@ fn main() {
     });
 
     std::fs::create_dir_all(std::path::Path::new(&output_path).parent().unwrap()).unwrap();
-    std::fs::write(&output_path, serde_json::to_string_pretty(&collection).unwrap()).unwrap();
-    println!("Generated {} polygon features in {} clusters to {}", global_id, num_clusters, output_path);
+    std::fs::write(
+        &output_path,
+        serde_json::to_string_pretty(&collection).unwrap(),
+    )
+    .unwrap();
+    println!(
+        "Generated {} polygon features in {} clusters to {}",
+        global_id, num_clusters, output_path
+    );
 }

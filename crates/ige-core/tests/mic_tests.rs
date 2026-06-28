@@ -16,7 +16,13 @@ fn make_polygon(coords: &[(f64, f64)]) -> Polygon<f64> {
 }
 
 fn square(size: f64) -> Polygon<f64> {
-    make_polygon(&[(0.0, 0.0), (size, 0.0), (size, size), (0.0, size), (0.0, 0.0)])
+    make_polygon(&[
+        (0.0, 0.0),
+        (size, 0.0),
+        (size, size),
+        (0.0, size),
+        (0.0, 0.0),
+    ])
 }
 
 fn filtered_exact() -> MicOptions {
@@ -61,7 +67,10 @@ fn mic_hole_polygon_center_is_in_domain() {
     ]);
     let poly = Polygon::new(outer, vec![hole]);
     let result = maximum_inscribed_circle(&poly, &filtered_exact()).expect("MIC solve failed");
-    assert!(poly.contains(&result.center), "center must be in polygon domain");
+    assert!(
+        poly.contains(&result.center),
+        "center must be in polygon domain"
+    );
     assert!(result.radius > 0.0);
 }
 

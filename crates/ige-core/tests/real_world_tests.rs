@@ -73,7 +73,8 @@ fn test_real_world_all_polygons() {
     let total = 10;
 
     for (_id, poly) in polygons.iter().take(total) {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve_oriented_lir(poly)));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve_oriented_lir(poly)));
         match result {
             Ok(Some(rect)) => {
                 let area = rect.area();
@@ -104,8 +105,9 @@ fn test_real_world_rectangle_area_always_less_than_polygon() {
 
     for (id, poly) in polygons.iter().take(20) {
         let poly_area = poly.unsigned_area();
-        
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve_oriented_lir(poly)));
+
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| solve_oriented_lir(poly)));
         match result {
             Ok(Some(rect)) => {
                 let rect_area = rect.area();
@@ -135,7 +137,10 @@ fn test_real_world_rectangle_center_inside_polygon() {
             let center_y = (rect.y_min + rect.y_max) / 2.0;
 
             assert!(
-                poly.contains(&Coord { x: center_x, y: center_y }),
+                poly.contains(&Coord {
+                    x: center_x,
+                    y: center_y
+                }),
                 "Feature {}: center ({}, {}) not inside polygon",
                 id,
                 center_x,

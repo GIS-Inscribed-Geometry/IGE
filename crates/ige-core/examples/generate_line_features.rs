@@ -7,8 +7,8 @@
 //!   cargo run --package ige-core --example generate_line_features
 //!   cargo run --package ige-core --example generate_line_features -- --count 300 --clusters 10 --output target/ige_output/random_lines.geojson
 
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 fn line_length(p1: &[f64; 2], p2: &[f64; 2]) -> f64 {
     let dx = p2[0] - p1[0];
@@ -102,29 +102,60 @@ fn main() {
 
         cluster_stats.push((
             format!("Cluster {}", cluster_idx + 1),
-            min_x, min_y, max_x, max_y,
+            min_x,
+            min_y,
+            max_x,
+            max_y,
         ));
 
         for line in &lines {
             global_id += 1;
             let mut feature_map = serde_json::Map::new();
-            feature_map.insert("type".to_string(), serde_json::Value::String("Feature".to_string()));
+            feature_map.insert(
+                "type".to_string(),
+                serde_json::Value::String("Feature".to_string()),
+            );
 
             let mut properties = serde_json::Map::new();
-            properties.insert("id".to_string(), serde_json::Value::Number(serde_json::Number::from(global_id)));
-            properties.insert("name".to_string(), serde_json::Value::String(format!("Line {}", global_id)));
-            properties.insert("cluster_id".to_string(), serde_json::Value::Number(serde_json::Number::from(cluster_idx + 1)));
-            feature_map.insert("properties".to_string(), serde_json::Value::Object(properties));
+            properties.insert(
+                "id".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(global_id)),
+            );
+            properties.insert(
+                "name".to_string(),
+                serde_json::Value::String(format!("Line {}", global_id)),
+            );
+            properties.insert(
+                "cluster_id".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(cluster_idx + 1)),
+            );
+            feature_map.insert(
+                "properties".to_string(),
+                serde_json::Value::Object(properties),
+            );
 
             let mut geometry = serde_json::Map::new();
-            geometry.insert("type".to_string(), serde_json::Value::String("LineString".to_string()));
+            geometry.insert(
+                "type".to_string(),
+                serde_json::Value::String("LineString".to_string()),
+            );
 
-            let coord_array: Vec<serde_json::Value> = line.iter().map(|c| {
-                serde_json::Value::Array(
-                    c.iter().map(|v| serde_json::Value::Number(serde_json::Number::from_f64(*v).unwrap())).collect()
-                )
-            }).collect();
-            geometry.insert("coordinates".to_string(), serde_json::Value::Array(coord_array));
+            let coord_array: Vec<serde_json::Value> = line
+                .iter()
+                .map(|c| {
+                    serde_json::Value::Array(
+                        c.iter()
+                            .map(|v| {
+                                serde_json::Value::Number(serde_json::Number::from_f64(*v).unwrap())
+                            })
+                            .collect(),
+                    )
+                })
+                .collect();
+            geometry.insert(
+                "coordinates".to_string(),
+                serde_json::Value::Array(coord_array),
+            );
             feature_map.insert("geometry".to_string(), serde_json::Value::Object(geometry));
 
             features_array.push(serde_json::Value::Object(feature_map));
@@ -132,21 +163,39 @@ fn main() {
     }
 
     let mut collection_map = serde_json::Map::new();
-    collection_map.insert("type".to_string(), serde_json::Value::String("FeatureCollection".to_string()));
-    collection_map.insert("name".to_string(), serde_json::Value::String("Clustered Line Features".to_string()));
+    collection_map.insert(
+        "type".to_string(),
+        serde_json::Value::String("FeatureCollection".to_string()),
+    );
+    collection_map.insert(
+        "name".to_string(),
+        serde_json::Value::String("Clustered Line Features".to_string()),
+    );
 
     let mut metadata = serde_json::Map::new();
-    metadata.insert("num_clusters".to_string(), serde_json::Value::Number(serde_json::Number::from(num_clusters)));
-    metadata.insert("cluster_spread".to_string(), serde_json::Value::Number(serde_json::Number::from_f64(cluster_spread).unwrap()));
-    let stats: Vec<serde_json::Value> = cluster_stats.iter().map(|(name, x0, y0, x1, y1)| {
-        serde_json::json!({
-            "name": name,
-            "bbox": [x0, y0, x1, y1]
+    metadata.insert(
+        "num_clusters".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(num_clusters)),
+    );
+    metadata.insert(
+        "cluster_spread".to_string(),
+        serde_json::Value::Number(serde_json::Number::from_f64(cluster_spread).unwrap()),
+    );
+    let stats: Vec<serde_json::Value> = cluster_stats
+        .iter()
+        .map(|(name, x0, y0, x1, y1)| {
+            serde_json::json!({
+                "name": name,
+                "bbox": [x0, y0, x1, y1]
+            })
         })
-    }).collect();
+        .collect();
     metadata.insert("clusters".to_string(), serde_json::Value::Array(stats));
     collection_map.insert("metadata".to_string(), serde_json::Value::Object(metadata));
-    collection_map.insert("features".to_string(), serde_json::Value::Array(features_array));
+    collection_map.insert(
+        "features".to_string(),
+        serde_json::Value::Array(features_array),
+    );
 
     let collection = serde_json::Value::Object(collection_map);
 
@@ -154,8 +203,14 @@ fn main() {
     let json_str = serde_json::to_string_pretty(&collection).unwrap();
     std::fs::write(&output_path, &json_str).unwrap();
 
-    println!("Generated {} line features in {} clusters to {}", global_id, num_clusters, output_path);
+    println!(
+        "Generated {} line features in {} clusters to {}",
+        global_id, num_clusters, output_path
+    );
     for (name, x0, y0, x1, y1) in &cluster_stats {
-        println!("  {}: bbox=({:.1},{:.1})-({:.1},{:.1})", name, x0, y0, x1, y1);
+        println!(
+            "  {}: bbox=({:.1},{:.1})-({:.1},{:.1})",
+            name, x0, y0, x1, y1
+        );
     }
 }

@@ -9,12 +9,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use geo_types::{Coord, LineString, Polygon};
-use ige_core::{
-    solve_axis_rect_grid_with_backend,
-    solve_oriented_lir,
-    MaskBackend,
-    SolverOptions,
-};
+use ige_core::{solve_axis_rect_grid_with_backend, solve_oriented_lir, MaskBackend, SolverOptions};
 
 fn make_polygon(coords: &[(f64, f64)]) -> Polygon<f64> {
     let ext: Vec<Coord<f64>> = coords.iter().map(|(x, y)| Coord { x: *x, y: *y }).collect();
@@ -199,22 +194,54 @@ fn benchmark_axis_grid_backends(c: &mut Criterion) {
     let min_ratio = 0.0;
 
     group.bench_function("cpu", |b| {
-        b.iter(|| solve_axis_rect_grid_with_backend(&poly, grid_steps, max_ratio, min_ratio, MaskBackend::Cpu));
+        b.iter(|| {
+            solve_axis_rect_grid_with_backend(
+                &poly,
+                grid_steps,
+                max_ratio,
+                min_ratio,
+                MaskBackend::Cpu,
+            )
+        });
     });
 
     #[cfg(feature = "gpu")]
     group.bench_function("gpu_sdf", |b| {
-        b.iter(|| solve_axis_rect_grid_with_backend(&poly, grid_steps, max_ratio, min_ratio, MaskBackend::GpuSdf));
+        b.iter(|| {
+            solve_axis_rect_grid_with_backend(
+                &poly,
+                grid_steps,
+                max_ratio,
+                min_ratio,
+                MaskBackend::GpuSdf,
+            )
+        });
     });
 
     #[cfg(feature = "gpu")]
     group.bench_function("gpu_grid", |b| {
-        b.iter(|| solve_axis_rect_grid_with_backend(&poly, grid_steps, max_ratio, min_ratio, MaskBackend::GpuGridBatch));
+        b.iter(|| {
+            solve_axis_rect_grid_with_backend(
+                &poly,
+                grid_steps,
+                max_ratio,
+                min_ratio,
+                MaskBackend::GpuGridBatch,
+            )
+        });
     });
 
     #[cfg(feature = "gpu")]
     group.bench_function("auto", |b| {
-        b.iter(|| solve_axis_rect_grid_with_backend(&poly, grid_steps, max_ratio, min_ratio, MaskBackend::Auto));
+        b.iter(|| {
+            solve_axis_rect_grid_with_backend(
+                &poly,
+                grid_steps,
+                max_ratio,
+                min_ratio,
+                MaskBackend::Auto,
+            )
+        });
     });
 
     group.finish();

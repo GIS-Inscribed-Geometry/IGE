@@ -3,8 +3,8 @@
 //! Run: `cargo test --test lir_axis_aligned_tests`
 //! Run all: `cargo test --workspace`
 
-use ige_core::{solve_oriented_lir, SolverOptions};
 use geo_types::{Coord, LineString, Polygon};
+use ige_core::{solve_oriented_lir, SolverOptions};
 
 fn make_polygon(coords: &[(f64, f64)]) -> Polygon<f64> {
     let ext: Vec<Coord<f64>> = coords.iter().map(|(x, y)| Coord { x: *x, y: *y }).collect();
@@ -29,28 +29,54 @@ fn pentagon() -> Polygon<f64> {
 
 fn concave_l_shape() -> Polygon<f64> {
     make_polygon(&[
-        (0.0, 0.0), (4.0, 0.0), (4.0, 1.0),
-        (2.0, 1.0), (2.0, 3.0), (4.0, 3.0), (4.0, 4.0), (0.0, 4.0)
+        (0.0, 0.0),
+        (4.0, 0.0),
+        (4.0, 1.0),
+        (2.0, 1.0),
+        (2.0, 3.0),
+        (4.0, 3.0),
+        (4.0, 4.0),
+        (0.0, 4.0),
     ])
 }
 
 fn concave_u_shape() -> Polygon<f64> {
     make_polygon(&[
-        (0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (3.0, 4.0),
-        (3.0, 1.0), (1.0, 1.0), (1.0, 4.0), (0.0, 4.0)
+        (0.0, 0.0),
+        (4.0, 0.0),
+        (4.0, 4.0),
+        (3.0, 4.0),
+        (3.0, 1.0),
+        (1.0, 1.0),
+        (1.0, 4.0),
+        (0.0, 4.0),
     ])
 }
 
 fn zigzag() -> Polygon<f64> {
     make_polygon(&[
-        (0.0, 0.0), (1.0, 0.5), (2.0, 0.0), (3.0, 0.5),
-        (4.0, 0.0), (4.0, 1.0), (3.0, 1.5), (2.0, 1.0),
-        (1.0, 1.5), (0.0, 1.0)
+        (0.0, 0.0),
+        (1.0, 0.5),
+        (2.0, 0.0),
+        (3.0, 0.5),
+        (4.0, 0.0),
+        (4.0, 1.0),
+        (3.0, 1.5),
+        (2.0, 1.0),
+        (1.0, 1.5),
+        (0.0, 1.0),
     ])
 }
 
 fn hexagon() -> Polygon<f64> {
-    make_polygon(&[(2.0, 0.0), (1.0, 1.732), (-1.0, 1.732), (-2.0, 0.0), (-1.0, -1.732), (1.0, -1.732)])
+    make_polygon(&[
+        (2.0, 0.0),
+        (1.0, 1.732),
+        (-1.0, 1.732),
+        (-2.0, 0.0),
+        (-1.0, -1.732),
+        (1.0, -1.732),
+    ])
 }
 
 #[test]

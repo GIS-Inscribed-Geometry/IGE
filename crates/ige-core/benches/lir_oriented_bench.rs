@@ -9,9 +9,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use geo_types::{coord, LineString, Polygon};
-use ige_core::solvers::lir::oriented::{
-    solve_lir_oriented, LirOrientedOptions,
-};
+use ige_core::solvers::lir::oriented::{solve_lir_oriented, LirOrientedOptions};
 
 fn test_shapes() -> Vec<Polygon<f64>> {
     vec![

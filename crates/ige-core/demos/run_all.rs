@@ -31,7 +31,7 @@ fn main() {
                 .args(["test", "--package", "ige-core", "--", "--nocapture"])
                 .status()
                 .expect("Failed to run tests");
-            
+
             if !status.success() {
                 eprintln!("Tests failed!");
                 std::process::exit(1);
@@ -41,10 +41,18 @@ fn main() {
         // Run benches
         println!("\n[2/3] Running benchmarks...\n");
         let status = Command::new("cargo")
-            .args(["bench", "--package", "ige-core", "--", "--noplot", "--sample-size", "10"])
+            .args([
+                "bench",
+                "--package",
+                "ige-core",
+                "--",
+                "--noplot",
+                "--sample-size",
+                "10",
+            ])
             .status()
             .expect("Failed to run benches");
-        
+
         if !status.success() {
             eprintln!("Benches failed!");
             std::process::exit(1);
@@ -55,7 +63,7 @@ fn main() {
             .args(["test", "--package", "ige-core", "--", "--nocapture"])
             .status()
             .expect("Failed to run tests");
-        
+
         if !status.success() {
             eprintln!("Tests failed!");
             std::process::exit(1);
@@ -66,15 +74,24 @@ fn main() {
         // Run visualization
         println!("\n[3/3] Generating visualization...\n");
         let status = Command::new("cargo")
-            .args(["run", "--package", "ige-core", "--example", "visualize", "--", "--limit", "10"])
+            .args([
+                "run",
+                "--package",
+                "ige-core",
+                "--example",
+                "visualize",
+                "--",
+                "--limit",
+                "10",
+            ])
             .status()
             .expect("Failed to run visualize");
-        
+
         if !status.success() {
             eprintln!("Visualization failed!");
             std::process::exit(1);
         }
-        
+
         println!("\n✓ Visualization saved to target/ige_output/index.html");
     }
 

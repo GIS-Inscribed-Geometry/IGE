@@ -14,9 +14,7 @@ pub use super::containment::rect_fully_contained;
 pub use super::AxisAlignedOptions;
 use crate::shared::Rectangle;
 
-use crate::tuning::{
-    AA_EXACT_BINARY_ITERS, AA_EXACT_REFINE_ITERS, AA_EXACT_TOP_SEEDS,
-};
+use crate::tuning::{AA_EXACT_BINARY_ITERS, AA_EXACT_REFINE_ITERS, AA_EXACT_TOP_SEEDS};
 
 const EPS: f64 = crate::tuning::AA_EPS;
 

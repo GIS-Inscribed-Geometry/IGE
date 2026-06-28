@@ -4,8 +4,8 @@
 
 use geo_types::{coord, LineString, Polygon};
 use ige_core::solve_ler_axis_aligned_with_lines;
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 
 fn sample_polygon() -> Polygon<f64> {
     Polygon::new(
@@ -29,9 +29,15 @@ fn generate_random_line(rng: &mut StdRng, bounds: (f64, f64, f64, f64)) -> LineS
     LineString::from(vec![coord! { x: x1, y: y1 }, coord! { x: x2, y: y2 }])
 }
 
-fn generate_random_lines(count: usize, seed: u64, bounds: (f64, f64, f64, f64)) -> Vec<LineString<f64>> {
+fn generate_random_lines(
+    count: usize,
+    seed: u64,
+    bounds: (f64, f64, f64, f64),
+) -> Vec<LineString<f64>> {
     let mut rng = StdRng::seed_from_u64(seed);
-    (0..count).map(|_| generate_random_line(&mut rng, bounds)).collect()
+    (0..count)
+        .map(|_| generate_random_line(&mut rng, bounds))
+        .collect()
 }
 
 #[test]
@@ -41,7 +47,11 @@ fn test_ler_with_300_random_line_obstacles() {
     let result = solve_ler_axis_aligned_with_lines(&poly, &[], &line_obstacles, 1.0, &opts());
     assert!(result.is_ok());
     let result = result.unwrap();
-    assert!(result.area > 0.0, "Expected positive area, got {}", result.area);
+    assert!(
+        result.area > 0.0,
+        "Expected positive area, got {}",
+        result.area
+    );
 }
 
 #[test]
@@ -60,23 +70,29 @@ fn test_ler_line_obstacles_smaller_space() {
     let result = solve_ler_axis_aligned_with_lines(&poly, &[], &line_obstacles, 0.5, &opts());
     assert!(result.is_ok());
     let result = result.unwrap();
-    assert!(result.area > 0.0, "Expected positive area, got {}", result.area);
+    assert!(
+        result.area > 0.0,
+        "Expected positive area, got {}",
+        result.area
+    );
 }
 
 #[test]
 fn test_ler_mixed_polygon_and_line_obstacles() {
     let poly = sample_polygon();
-    let polygon_obstacles = vec![
-        Polygon::new(LineString::from(vec![
+    let polygon_obstacles = vec![Polygon::new(
+        LineString::from(vec![
             coord! { x: 10.0, y: 10.0 },
             coord! { x: 20.0, y: 10.0 },
             coord! { x: 20.0, y: 20.0 },
             coord! { x: 10.0, y: 20.0 },
             coord! { x: 10.0, y: 10.0 },
-        ]), vec![]),
-    ];
+        ]),
+        vec![],
+    )];
     let line_obstacles = generate_random_lines(300, 456, (0.0, 0.0, 100.0, 100.0));
-    let result = solve_ler_axis_aligned_with_lines(&poly, &polygon_obstacles, &line_obstacles, 1.0, &opts());
+    let result =
+        solve_ler_axis_aligned_with_lines(&poly, &polygon_obstacles, &line_obstacles, 1.0, &opts());
     assert!(result.is_ok());
     let result = result.unwrap();
     assert!(result.area >= 0.0, "Expected non-negative area");
@@ -106,7 +122,8 @@ fn test_ler_various_thicknesses() {
     let poly = sample_polygon();
     let line_obstacles = generate_random_lines(100, 999, (0.0, 0.0, 100.0, 100.0));
     for thickness in [0.1, 0.5, 1.0, 2.0, 5.0] {
-        let result = solve_ler_axis_aligned_with_lines(&poly, &[], &line_obstacles, thickness, &opts());
+        let result =
+            solve_ler_axis_aligned_with_lines(&poly, &[], &line_obstacles, thickness, &opts());
         assert!(result.is_ok(), "Failed with thickness {}", thickness);
         let result = result.unwrap();
         eprintln!("Thickness {}: area {}", thickness, result.area);
@@ -117,21 +134,39 @@ fn test_ler_various_thicknesses() {
 fn test_ler_reproducibility_with_seed() {
     let line_obstacles = generate_random_lines(300, 11111, (0.0, 0.0, 100.0, 100.0));
     let poly = sample_polygon();
-    let result1 = solve_ler_axis_aligned_with_lines(&poly, &[], &line_obstacles, 1.0, &opts()).unwrap();
-    let result2 = solve_ler_axis_aligned_with_lines(&poly, &[], &line_obstacles, 1.0, &opts()).unwrap();
-    assert!((result1.area - result2.area).abs() < 1e-10, "Results should be reproducible");
+    let result1 =
+        solve_ler_axis_aligned_with_lines(&poly, &[], &line_obstacles, 1.0, &opts()).unwrap();
+    let result2 =
+        solve_ler_axis_aligned_with_lines(&poly, &[], &line_obstacles, 1.0, &opts()).unwrap();
+    assert!(
+        (result1.area - result2.area).abs() < 1e-10,
+        "Results should be reproducible"
+    );
 }
 
 #[test]
 fn test_ler_line_obstacles_boundary() {
     let poly = sample_polygon();
     let boundary_lines = vec![
-        LineString::from(vec![coord! { x: 25.0, y: 0.0 }, coord! { x: 25.0, y: 100.0 }]),
-        LineString::from(vec![coord! { x: 75.0, y: 0.0 }, coord! { x: 75.0, y: 100.0 }]),
-        LineString::from(vec![coord! { x: 0.0, y: 25.0 }, coord! { x: 100.0, y: 25.0 }]),
-        LineString::from(vec![coord! { x: 0.0, y: 75.0 }, coord! { x: 100.0, y: 75.0 }]),
+        LineString::from(vec![
+            coord! { x: 25.0, y: 0.0 },
+            coord! { x: 25.0, y: 100.0 },
+        ]),
+        LineString::from(vec![
+            coord! { x: 75.0, y: 0.0 },
+            coord! { x: 75.0, y: 100.0 },
+        ]),
+        LineString::from(vec![
+            coord! { x: 0.0, y: 25.0 },
+            coord! { x: 100.0, y: 25.0 },
+        ]),
+        LineString::from(vec![
+            coord! { x: 0.0, y: 75.0 },
+            coord! { x: 100.0, y: 75.0 },
+        ]),
     ];
-    let result = solve_ler_axis_aligned_with_lines(&poly, &[], &boundary_lines, 1.0, &opts()).unwrap();
+    let result =
+        solve_ler_axis_aligned_with_lines(&poly, &[], &boundary_lines, 1.0, &opts()).unwrap();
     assert!(result.area > 0.0);
     eprintln!("Boundary lines area: {}", result.area);
 }
@@ -165,5 +200,11 @@ fn solve_ler_with_lines(
     line_obstacles: &[LineString<f64>],
     line_thickness: f64,
 ) -> ige_core::Result<ige_core::LerResult> {
-    solve_ler_axis_aligned_with_lines(poly, polygon_obstacles, line_obstacles, line_thickness, &opts())
+    solve_ler_axis_aligned_with_lines(
+        poly,
+        polygon_obstacles,
+        line_obstacles,
+        line_thickness,
+        &opts(),
+    )
 }

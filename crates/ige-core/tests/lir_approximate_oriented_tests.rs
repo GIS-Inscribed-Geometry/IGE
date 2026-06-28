@@ -26,8 +26,10 @@ fn main() {
         ..Default::default()
     };
 
-    let std_res = solve_lir_oriented(&poly, &std_opts).expect("standard lir approx oriented solve failed");
-    let par_res = solve_lir_oriented(&poly, &par_opts).expect("parallel lir approx oriented solve failed");
+    let std_res =
+        solve_lir_oriented(&poly, &std_opts).expect("standard lir approx oriented solve failed");
+    let par_res =
+        solve_lir_oriented(&poly, &par_opts).expect("parallel lir approx oriented solve failed");
 
     println!("Standard: area={}", std_res.area);
     println!("Parallel: area={}", par_res.area);
@@ -123,5 +125,10 @@ fn compare_parallel_quality(poly: &Polygon<f64>, min_ratio: f64) {
     let par_res = solve_lir_oriented(poly, &par_opts).expect("parallel solve failed");
 
     let ratio = std_res.area.min(par_res.area) / std_res.area.max(1e-10);
-    assert!(ratio >= min_ratio, "parallel quality too low: {} < {}", ratio, min_ratio);
+    assert!(
+        ratio >= min_ratio,
+        "parallel quality too low: {} < {}",
+        ratio,
+        min_ratio
+    );
 }

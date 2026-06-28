@@ -4,9 +4,9 @@
 //! a per-side binary contraction that guarantees the result is fully inside
 //! the polygon while maximising area.
 
-use geo::{BoundingRect, Contains};
 #[allow(deprecated)]
 use geo::EuclideanDistance;
+use geo::{BoundingRect, Contains};
 use geo_types::{Coord, LineString, Point, Polygon};
 
 fn segments_intersect(a: Coord<f64>, b: Coord<f64>, c: Coord<f64>, d: Coord<f64>) -> bool {

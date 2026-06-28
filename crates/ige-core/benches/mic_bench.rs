@@ -152,11 +152,19 @@ fn bench_mic_grid_dhat(c: &mut Criterion) {
     for (name, poly) in fixtures() {
         group.bench_function(name, |b| {
             b.iter(|| {
-                let workspace = MicWorkspace::new(ige_core::solvers::mic::input::HostPolygon::from_polygon(&poly).unwrap()).unwrap();
+                let workspace = MicWorkspace::new(
+                    ige_core::solvers::mic::input::HostPolygon::from_polygon(&poly).unwrap(),
+                )
+                .unwrap();
                 let bounds = workspace.host.bounds().unwrap();
                 let diag = (bounds.2 - bounds.0).hypot(bounds.3 - bounds.1).max(1.0);
                 let tolerance = (diag * 1e-7).max(1e-12);
-                solve_grid_profiled(&workspace.host, &workspace.pip_index, &workspace.nb_index, tolerance)
+                solve_grid_profiled(
+                    &workspace.host,
+                    &workspace.pip_index,
+                    &workspace.nb_index,
+                    tolerance,
+                )
             });
         });
     }
