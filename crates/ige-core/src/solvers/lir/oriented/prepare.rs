@@ -48,7 +48,7 @@ pub fn simplify_for_solve(poly: &Polygon<f64>) -> (Polygon<f64>, bool) {
         return (poly.clone(), false);
     }
 
-    let simplified = poly.simplify(&tol);
+    let simplified = poly.simplify(tol);
     if simplified.exterior().0.len() < 4 || simplified.unsigned_area() <= 0.0 {
         return (poly.clone(), false);
     }
