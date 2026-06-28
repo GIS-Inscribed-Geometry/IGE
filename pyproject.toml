@@ -26,7 +26,6 @@ Documentation = "https://github.com/GIS-Inscribed-Geometry/IGE"
 
 [tool.maturin]
 module-name = "liriap._native"
-python-source = "python"
 manifest-path = "crates/ige-py/Cargo.toml"
 manylinux = "2014"
 features = ["extension-module"]
