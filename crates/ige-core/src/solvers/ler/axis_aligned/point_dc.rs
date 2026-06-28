@@ -280,7 +280,8 @@ fn dc(
 mod tests {
     use super::*;
     use geo_types::{coord, LineString};
-    use rand::{Rng, SeedableRng};
+    use rand::distributions::{Distribution, Uniform};
+    use rand::SeedableRng;
 
     fn rp(x0: f64, y0: f64, x1: f64, y1: f64) -> Polygon<f64> {
         Polygon::new(
@@ -405,11 +406,11 @@ mod tests {
         use rand::rngs::StdRng;
         for seed in 0..20 {
             let mut rng = StdRng::seed_from_u64(seed);
-            let n = rng.gen_range(5..30);
+            let n = Uniform::new(5usize, 30).sample(&mut rng);
             let mut pts = Vec::new();
             for _ in 0..n {
-                let x = rng.gen_range(1.0..99.0);
-                let y = rng.gen_range(1.0..99.0);
+                let x = Uniform::new(1.0f64, 99.0).sample(&mut rng);
+                let y = Uniform::new(1.0f64, 99.0).sample(&mut rng);
                 pts.push(Coord { x, y });
             }
             let obs: Vec<Polygon<f64>> = pts

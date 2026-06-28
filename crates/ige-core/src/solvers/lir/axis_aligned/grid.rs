@@ -619,11 +619,11 @@ mod tests {
             return;
         }
         let poly = unit_square();
-        let cpu = solve_axis_rect_grid_with_backend(&poly, 64, 0.0, MaskBackend::Cpu).unwrap();
+        let cpu = solve_axis_rect_grid_with_backend(&poly, 64, 0.0, 0.0, MaskBackend::Cpu).unwrap();
         let gpu_sdf =
-            solve_axis_rect_grid_with_backend(&poly, 64, 0.0, MaskBackend::GpuSdf).unwrap();
+            solve_axis_rect_grid_with_backend(&poly, 64, 0.0, 0.0, MaskBackend::GpuSdf).unwrap();
         let gpu_grid =
-            solve_axis_rect_grid_with_backend(&poly, 64, 0.0, MaskBackend::GpuGridBatch).unwrap();
+            solve_axis_rect_grid_with_backend(&poly, 64, 0.0, 0.0, MaskBackend::GpuGridBatch).unwrap();
 
         let cpu_area = cpu.4;
         assert!(
