@@ -20,9 +20,9 @@ classifiers = [
 ]
 
 [project.urls]
-Source = "https://github.com/anomalyco/IGE"
-Documentation = "https://github.com/anomalyco/IGE"
-"QGIS Plugin" = "https://github.com/anomalyco/IGE/tree/main/qgis_plugin"
+Source = "https://github.com/GIS-Inscribed-Geometry/IGE"
+Documentation = "https://github.com/GIS-Inscribed-Geometry/IGE"
+"QGIS Plugin" = "https://github.com/GIS-Inscribed-Geometry/IGE/tree/master/qgis_plugin"
 
 [tool.maturin]
 module-name = "liriap._native"
