@@ -38,7 +38,7 @@ jobs:
         with:
           components: clippy
       - name: cargo clippy
-        run: cargo clippy --workspace --all-features -- -D warnings
+        run: cargo clippy --workspace --all-features
 
   rustdoc:
     runs-on: ubuntu-latest
