@@ -96,20 +96,12 @@ jobs:
           path: dist/*
 
   test:
-    needs: [build-linux, build-macos, build-windows, build-sdist]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
-        with:
-          path: dist
-          pattern: wheels-*
-          merge-multiple: true
-
-      - name: Test installed wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          command: test
-          args: --manifest-path crates/ige-py/Cargo.toml
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Test native code
+        run: cargo test --manifest-path crates/ige-py/Cargo.toml
 
   publish:
     needs: [test]

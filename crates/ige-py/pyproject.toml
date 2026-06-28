@@ -1,25 +1,31 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
+requires = ["maturin>=1.5,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "ige"
-version = "0.1.5"
-description = "Inscribed Geometry Engine - Largest Inscribed Rectangle algorithms"
+name = "liriap"
+version = "0.1.0"
+description = "Inscribed Geometry Engine — fast largest-inscribed-rectangle solver"
 readme = "README.md"
-authors = [{name = "IGE Contributors"}]
+requires-python = ">=3.9"
 license = {text = "MIT"}
-requires-python = ">=3.8"
+keywords = ["geometry", "polygon", "rectangle", "inscribed", "lir"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Rust",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: GIS",
 ]
 
-# No Python dependencies needed - all in compiled extension
+[project.urls]
+Source = "https://github.com/GIS-Inscribed-Geometry/IGE"
+Documentation = "https://github.com/GIS-Inscribed-Geometry/IGE"
+"QGIS Plugin" = "https://github.com/GIS-Inscribed-Geometry/IGE/tree/master/qgis_plugin"
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+module-name = "liriap._native"
+manifest-path = "crates/ige-py/Cargo.toml"
+manylinux = "off"
+features = ["extension-module"]
