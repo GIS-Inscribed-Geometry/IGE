@@ -1,4 +1,3 @@
-pub mod bvh;
 pub mod nearest_boundary;
 pub mod pip;
 
