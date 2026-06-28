@@ -654,7 +654,7 @@ pub fn solve_obb_py(_exterior: Vec<(f64, f64)>) -> PyResult<PyObbResult> {
 // ─── Module registration ──────────────────────────────────────────────────
 
 #[pymodule]
-fn ige(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+fn _native(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyOrientedLirResult>()?;
     m.add_function(wrap_pyfunction!(solve_oriented_lir_py, m)?)?;
     m.add_function(wrap_pyfunction!(oriented_lir_demo, m)?)?;
