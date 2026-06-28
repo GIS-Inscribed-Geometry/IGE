@@ -4,12 +4,8 @@
 //! a per-side binary contraction that guarantees the result is fully inside
 //! the polygon while maximising area.
 
-use geo::{BoundingRect, Contains, Distance, Euclidean, Geometry};
+use geo::{BoundingRect, Contains};
 use geo_types::{Coord, LineString, Point, Polygon};
-
-fn point_dist(poly: &Polygon<f64>, pt: Point<f64>) -> f64 {
-    Euclidean::distance(&Geometry::from(poly.clone()), &pt)
-}
 
 fn segments_intersect(a: Coord<f64>, b: Coord<f64>, c: Coord<f64>, d: Coord<f64>) -> bool {
     fn orient(p: Coord<f64>, q: Coord<f64>, r: Coord<f64>) -> f64 {
@@ -57,12 +53,11 @@ pub fn rect_fully_contained(poly: &Polygon<f64>, x0: f64, y0: f64, x1: f64, y1: 
         return false;
     }
 
-    // Stage 1: corners -- accept boundary points (distance <= ε)
-    const ON_BOUNDARY: f64 = crate::tuning::CONTAIN_BOUNDARY_EPS;
+    // Stage 1: corners
     let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
     if !corners.iter().all(|&(cx, cy)| {
         let pt = Point::new(cx, cy);
-        poly.contains(&pt) || point_dist(poly, pt) <= ON_BOUNDARY
+        poly.contains(&pt)
     }) {
         return false;
     }
