@@ -1,5 +1,3 @@
-#[cfg(feature = "shewchuk")]
-pub mod common;
 pub mod ler;
 pub mod lir;
 pub mod lir_obstacles;

@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 //! Standard prelude for LIRiAP
 
 pub use crate::shared::{

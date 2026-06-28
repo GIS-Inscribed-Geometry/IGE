@@ -8,6 +8,8 @@ use ige_core::{rotate_polygon, solve_axis_aligned, AxisAlignedOptions};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+#![allow(deprecated)]
+
 // ─── Oriented solver ──────────────────────────────────────────────────────
 
 #[pyclass]

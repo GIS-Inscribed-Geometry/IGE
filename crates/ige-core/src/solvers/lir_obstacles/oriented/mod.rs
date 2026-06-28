@@ -253,7 +253,7 @@ fn any_rot_obstacle_in_x(
     x0: f64,
     x1: f64,
     pts: &[Coord<f64>],
-    lines: &[LineSegRot],
+    _lines: &[LineSegRot],
     poly_bboxes: &[(f64, f64, f64, f64)],
 ) -> bool {
     for c in pts {
@@ -280,7 +280,7 @@ fn any_rot_obstacle_in_y(
     y0: f64,
     y1: f64,
     pts: &[Coord<f64>],
-    lines: &[LineSegRot],
+    _lines: &[LineSegRot],
     poly_bboxes: &[(f64, f64, f64, f64)],
 ) -> bool {
     for c in pts {
@@ -309,7 +309,7 @@ fn rot_shrink_rect(
     mut r: f64,
     mut t: f64,
     pts: &[Coord<f64>],
-    lines: &[LineSegRot],
+    _lines: &[LineSegRot],
     poly_bboxes: &[(f64, f64, f64, f64)],
 ) -> (f64, f64, f64, f64) {
     let eps = EPS;
@@ -544,7 +544,7 @@ fn fine_solve_angle(
         }
     }
 
-    let (rx0, ry0, rx1, ry1, area) = best_local?;
+    let (rx0, ry0, rx1, ry1, _area) = best_local?;
 
     let rot_poly = Polygon::new(
         LineString::from(rotated.exterior.clone()),
@@ -583,7 +583,7 @@ fn fine_solve_angle(
         let cert_y1 = cert_bb.max().y;
         let exp_area = (ex1 - ex0) * (ey1 - ey0);
 
-        let final_area = if cert_area > exp_area {
+        let _final_area = if cert_area > exp_area {
             cert_area
         } else {
             exp_area

@@ -8,6 +8,7 @@ use geo_types::Point;
 const SQRT2: f64 = std::f64::consts::SQRT_2;
 
 #[cfg(feature = "tracy")]
+#[allow(unused_macros)]
 macro_rules! profile_zone {
     ($name:expr) => {
         let _span = tracy_client::span!($name);
@@ -15,6 +16,7 @@ macro_rules! profile_zone {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 struct GridCell {
     x: f64,
     y: f64,

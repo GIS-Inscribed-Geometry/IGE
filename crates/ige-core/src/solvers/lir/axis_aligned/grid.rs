@@ -55,7 +55,7 @@ pub fn solve_axis_rect_grid(
 
 pub fn solve_axis_rect_grid_with_backend(
     poly: &Polygon<f64>,
-    mut grid_steps: usize,
+    grid_steps: usize,
     max_ratio: f64,
     min_ratio: f64,
     backend: MaskBackend,

@@ -43,7 +43,7 @@ fn merge(obs: &[RectObs]) -> Vec<RectObs> {
 }
 
 pub fn build(inputs: &[Polygon<f64>]) -> Vec<RectObs> {
-    let mut rects: Vec<RectObs> = inputs
+    let rects: Vec<RectObs> = inputs
         .iter()
         .filter_map(|p| {
             let bb = p.bounding_rect()?;

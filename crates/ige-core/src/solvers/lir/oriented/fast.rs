@@ -8,7 +8,7 @@ use geo_types::Polygon;
 pub fn maybe_fast_path(
     poly: &Polygon<f64>,
     max_ratio: f64,
-    min_ratio: f64,
+    _min_ratio: f64,
 ) -> Option<(Polygon<f64>, f64, f64, f64)> {
     let ext = &poly.exterior().0;
     let nv = if ext.len() > 1 { ext.len() - 1 } else { 0 };

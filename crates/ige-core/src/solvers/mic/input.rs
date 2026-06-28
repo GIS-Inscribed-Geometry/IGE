@@ -423,6 +423,7 @@ impl SegmentIndex {
     }
 }
 
+#[allow(dead_code)]
 fn normalize_ring(ring: &LineString<f64>, is_hole: bool) -> Result<Vec<[f64; 2]>, MicError> {
     let mut pts = Vec::<[f64; 2]>::new();
     for c in &ring.0 {
@@ -478,6 +479,7 @@ fn normalize_ring(ring: &LineString<f64>, is_hole: bool) -> Result<Vec<[f64; 2]>
     Ok(pts)
 }
 
+#[allow(dead_code)]
 fn ring_to_linestring(ring: &[[f64; 2]]) -> LineString<f64> {
     let coords = ring
         .iter()
@@ -486,10 +488,12 @@ fn ring_to_linestring(ring: &[[f64; 2]]) -> LineString<f64> {
     LineString::from(coords)
 }
 
+#[allow(dead_code)]
 fn approx_same(a: [f64; 2], b: [f64; 2]) -> bool {
     (a[0] - b[0]).abs() <= NORMALIZE_EPS && (a[1] - b[1]).abs() <= NORMALIZE_EPS
 }
 
+#[allow(dead_code)]
 fn ring_signed_area_open(open_ring: &[[f64; 2]]) -> f64 {
     let n = open_ring.len();
     let mut sum = 0.0;
