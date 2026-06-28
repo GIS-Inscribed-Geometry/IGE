@@ -1,6 +1,6 @@
-#[allow(unused_imports)]
 //! Standard prelude for LIRiAP
 
+#[allow(unused_imports)]
 pub use crate::shared::{
     rotate_polygon, AlgorithmCategory, AlgorithmPrecision, AlgorithmSpeed, LirError, PolygonType,
     Rectangle, Result, SolverOptions,
