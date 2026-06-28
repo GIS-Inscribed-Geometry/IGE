@@ -309,7 +309,7 @@ fn rot_shrink_rect(
     mut r: f64,
     mut t: f64,
     pts: &[Coord<f64>],
-    lines: &[LineSegRot],
+    _lines: &[LineSegRot],
     poly_bboxes: &[(f64, f64, f64, f64)],
 ) -> (f64, f64, f64, f64) {
     let eps = EPS;

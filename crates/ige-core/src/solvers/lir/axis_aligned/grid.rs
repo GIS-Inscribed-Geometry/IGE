@@ -169,7 +169,6 @@ pub fn solve_axis_rect_grid_with_backend(
 // --- BCRS vertex-coordinate grid solver -----------------------------------
 
 /// Maximum vertex-coordinate count per axis before falling back to uniform grid.
-
 /// Solve the largest axis-aligned rectangle using polygon vertex coordinates
 /// as grid lines (boundary-coordinate raster solve).
 ///

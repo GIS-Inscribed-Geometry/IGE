@@ -4,9 +4,7 @@
 //! a per-side binary contraction that guarantees the result is fully inside
 //! the polygon while maximising area.
 
-#[allow(deprecated)]
-use geo::EuclideanDistance;
-use geo::{BoundingRect, Contains};
+use geo::{BoundingRect, Contains, EuclideanDistance};
 use geo_types::{Coord, LineString, Point, Polygon};
 
 fn segments_intersect(a: Coord<f64>, b: Coord<f64>, c: Coord<f64>, d: Coord<f64>) -> bool {
@@ -60,7 +58,11 @@ pub fn rect_fully_contained(poly: &Polygon<f64>, x0: f64, y0: f64, x1: f64, y1: 
     let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
     if !corners.iter().all(|&(cx, cy)| {
         let pt = Point::new(cx, cy);
-        poly.contains(&pt) || poly.euclidean_distance(&pt) <= ON_BOUNDARY
+        poly.contains(&pt) || {
+            #[allow(deprecated)]
+            poly.euclidean_distance(&pt)
+                <= ON_BOUNDARY
+        }
     }) {
         return false;
     }
