@@ -82,7 +82,7 @@ impl Default for IgeOptions {
     }
 }
 
-// ─── Axis-aligned solver ──────────────────────────────────────────────────
+// --- Axis-aligned solver ---
 
 /// C-compatible axis-aligned solver options
 #[repr(C)]
@@ -111,7 +111,7 @@ impl From<IgeAxisAlignedOptions> for AxisAlignedOptions {
     }
 }
 
-// ─── LER solver (placeholder) ─────────────────────────────────────────────────
+// --- LER solver (placeholder) ---
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn ige_ler_options_default() -> IgeLerOptions {
     IgeLerOptions::default()
 }
 
-// ─── Nested solver (placeholder) ─────────────────────────────────────────
+// --- Nested solver (placeholder) ---
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -175,7 +175,7 @@ pub unsafe extern "C" fn ige_nested_options_default() -> IgeNestedOptions {
     IgeNestedOptions::default()
 }
 
-// ─── LIR + obstacles solver (placeholder) ─────────────────────────────────
+// --- LIR + obstacles solver (placeholder) ---
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -212,7 +212,7 @@ pub unsafe extern "C" fn ige_lir_obstacles_options_default() -> IgeLirObstaclesO
     IgeLirObstaclesOptions::default()
 }
 
-// ─── OBB solver (placeholder) ─────────────────────────────────────────────
+// --- OBB solver (placeholder) ---
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -386,6 +386,7 @@ pub unsafe extern "C" fn ige_solve_mic(
     let mic_opts = MicOptions {
         engine: mic_engine_from_raw(raw_opts.engine),
         robust_mode: robust_mode_from_raw(raw_opts.robust_mode),
+        use_bvh: false,
     };
 
     match maximum_inscribed_circle(&polygon, &mic_opts) {
