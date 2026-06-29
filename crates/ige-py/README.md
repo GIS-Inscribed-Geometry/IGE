@@ -1,6 +1,6 @@
 # ige - Inscribed Geometry Engine
 
-Fast largest inscribed rectangle algorithms written in Rust with Python bindings.
+Largest inscribed rectangle algorithms implemented in Rust with Python bindings.
 
 ## Install
 
