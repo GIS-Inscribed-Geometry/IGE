@@ -17,12 +17,12 @@ python run_ige_evolution.py --target axis_aligned/sdf.rs      # signed-distance-
 python run_ige_evolution.py --target axis_aligned/histogram.rs # LRIH kernel
 ```
 
-10 modules total. The source is auto-loaded from the real crate — no manual initial program files.
+10 modules total. The source is auto-loaded from the real crate - no manual initial program files.
 
 ## Modes
 
 ```powershell
-python run_ige_evolution.py --mode balanced   # default — fill_rate / time^0.61
+python run_ige_evolution.py --mode balanced   # default - fill_rate / time^0.61
 python run_ige_evolution.py --mode accuracy   # fill only, ignore speed
 python run_ige_evolution.py --mode speed      # fill_per_ms
 python run_ige_evolution.py --mode tune       # constants only
